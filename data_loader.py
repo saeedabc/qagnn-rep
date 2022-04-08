@@ -139,5 +139,5 @@ class QAGNN_RawDataLoader:
             d = Data(x=node_embs, node_ids=node_ids, node_types=node_types, node_scores=node_scores,
                      edge_index=edge_index, edge_type=edge_type, edge_attr=edge_attr, y=y)
 
-            li.append(d.cuda() if which == 'train' else d)
+            li.append(d)
         return li

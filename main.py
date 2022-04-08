@@ -26,13 +26,12 @@ def main(mode, seed, lr, batch_size, n_epochs, n_ntype, n_etype, max_n_nodes, ma
                              n_ntype=n_ntype, n_etype=n_etype,
                              max_node_num=max_n_nodes, max_seq_length=max_seq_len)
 
-    model = QAGNN(x_init_dim=db.cp_dim, hid_dim=hid_dim, n_ntype=n_ntype, n_etype=n_etype, dropout=dropout)  # TODO
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = QAGNN(x_init_dim=db.cp_dim, hid_dim=hid_dim, n_ntype=n_ntype, n_etype=n_etype, dropout=dropout).to(device)  # TODO
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     if torch.cuda.device_count() > 1:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
         model = torch.nn.DataParallel(model)
-    model.to(device)
 
     save_model_path = f'saved_models/csqa/lm_{lm_name}_hiddim_{hid_dim}_batchsize_{batch_size}_seed_{seed}.pth'
     criterion = torch.nn.BCELoss()
@@ -60,10 +59,11 @@ def train(device, model, criterion, optimizer, train_loader, dev_loader, n_epoch
     acc_list = []; loss_list = []
     for epoch in range(n_epochs):
         for i, batch in enumerate(tqdm(train_loader)):
-            batch = batch.to(device)
+            batch.to(device)
 
             out = model(batch).squeeze(1)
             target = batch.y
+
             loss = criterion(out, target)
 
             optimizer.zero_grad()
