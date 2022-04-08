@@ -1,0 +1,31 @@
+{
+    "mode": ["train", "test"],
+    "seed": 0,
+
+    "lr": 1e-3,
+    "batch_size": 64,
+    "n_epochs": 10,
+
+    "n_ntype": 4,
+    "n_etype": 38,
+    "max_n_nodes": 200,
+    "max_seq_len": 128,
+
+    "hid_dim": 100,
+
+    "dropout": 0.2,
+    "weight_decay": 0.01,
+
+    "lm_name": "roberta-large",
+
+    "cp_emb_path": "data/cpnet/tzw.ent.npy",
+
+    "train_adj_path": "data/csqa/graph/train.graph.adj.pk",
+    "train_stmt_path":  "data/csqa/statement/train.statement.jsonl",
+
+    "dev_adj_path": "data/csqa/graph/dev.graph.adj.pk",
+    "dev_stmt_path":  "data/csqa/statement/dev.statement.jsonl",
+
+    "test_adj_path": "data/csqa/graph/test.graph.adj.pk",
+    "test_stmt_path":  "data/csqa/statement/test.statement.jsonl"
+}
