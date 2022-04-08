@@ -3,7 +3,7 @@
     "seed": 0,
 
     "lr": 1e-3,
-    "batch_size": 64,
+    "batch_size": 256,
     "n_epochs": 10,
 
     "n_ntype": 4,

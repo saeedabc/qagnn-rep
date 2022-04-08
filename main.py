@@ -16,15 +16,8 @@ def main(mode, seed, lr, batch_size, n_epochs, n_ntype, n_etype, max_n_nodes, ma
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-
-    # if torch.cuda.is_available():
-    assert torch.cuda.is_available()
-    torch.cuda.manual_seed(seed)
-
-    # if torch.cuda.is_available():
-    #     device = torch.device("cuda")
-    # else:
-    #     device = torch.device("cpu")
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
 
     db = QAGNN_RawDataLoader(cp_emb_path, train_stmt_path, train_adj_path,
                              dev_stmt_path, dev_adj_path,
@@ -33,16 +26,21 @@ def main(mode, seed, lr, batch_size, n_epochs, n_ntype, n_etype, max_n_nodes, ma
                              n_ntype=n_ntype, n_etype=n_etype,
                              max_node_num=max_n_nodes, max_seq_length=max_seq_len)
 
+    model = QAGNN(x_init_dim=db.cp_dim, hid_dim=hid_dim, n_ntype=n_ntype, n_etype=n_etype, dropout=dropout)  # TODO
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.device_count() > 1:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
+        model = torch.nn.DataParallel(model)
+    model.to(device)
+
     save_model_path = f'saved_models/csqa/lm_{lm_name}_hiddim_{hid_dim}_batchsize_{batch_size}_seed_{seed}.pth'
     criterion = torch.nn.BCELoss()
-    # criterion = torch.nn.BCEWithLogitsLoss()
-    model = QAGNN(x_init_dim=db.cp_dim, hid_dim=hid_dim, n_ntype=n_ntype, n_etype=n_etype, dropout=dropout).cuda()  # TODO
-    # model = QAGNN(x_init_dim=24, hid_dim=32, n_ntype=4, n_etype=38).cuda()
 
     if 'train' in mode:
         optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
-        train(model, criterion, optimizer,
+        train(device, model, criterion, optimizer,
               train_loader=DataLoader(dataset=db.dataset('train'), batch_size=batch_size),
               dev_loader=DataLoader(dataset=db.dataset('dev'), batch_size=batch_size),
               n_epochs=n_epochs)
@@ -52,16 +50,18 @@ def main(mode, seed, lr, batch_size, n_epochs, n_ntype, n_etype, max_n_nodes, ma
 
     if 'test' in mode:
         model.load_state_dict(torch.load(save_model_path))  # ; model.eval()
-        evaluate(model, criterion, loader=DataLoader(dataset=db.dataset('test'), batch_size=batch_size))
+        evaluate(device, model, criterion, loader=DataLoader(dataset=db.dataset('test'), batch_size=batch_size))
 
 
-def train(model, criterion, optimizer, train_loader, dev_loader, n_epochs=10, print_every_n_steps=1000):
+def train(device, model, criterion, optimizer, train_loader, dev_loader, n_epochs=10, print_every_n_steps=1000):
     model.train()
 
     n_train_batches = len(train_loader)
     acc_list = []; loss_list = []
     for epoch in range(n_epochs):
         for i, batch in enumerate(tqdm(train_loader)):
+            batch = batch.to(device)
+
             out = model(batch).squeeze(1)
             target = batch.y
             loss = criterion(out, target)
@@ -83,10 +83,10 @@ def train(model, criterion, optimizer, train_loader, dev_loader, n_epochs=10, pr
                 print(f'#Step[{step + 1}], Average Train Acc: {avg_acc}, Average Train Loss: {avg_loss}')
                 acc_list = []; loss_list = []
 
-    evaluate(model, criterion, dev_loader)
+    evaluate(device, model, criterion, dev_loader)
 
 
-def evaluate(model, criterion, loader):
+def evaluate(device, model, criterion, loader):
     model.eval()
 
     loss_list = []
@@ -94,6 +94,8 @@ def evaluate(model, criterion, loader):
     n_correct = 0
     with torch.no_grad():
         for i, batch in enumerate(tqdm(loader)):
+            batch = batch.to(device)
+
             out = model(batch)
             target = batch.y
             loss = criterion(out, target)
