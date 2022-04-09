@@ -2,7 +2,7 @@
     "mode": ["train", "test"],
     "seed": 0,
 
-    "lr": 1e-1,
+    "lr": 3e-3,
     "batch_size": 50,
     "n_epochs": 10,
 
@@ -11,7 +11,7 @@
     "max_n_nodes": 200,
     "max_seq_len": 128,
 
-    "hid_dim": 100,
+    "hid_dim": 256,
 
     "dropout": 0.2,
     "weight_decay": 0.01,

@@ -39,7 +39,7 @@ def main(mode, seed, lr, batch_size, n_epochs, n_ntype, n_etype, max_n_nodes, ma
     criterion = torch.nn.BCEWithLogitsLoss()
 
     if 'train' in mode:
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+        optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)
 
         train(device, model, criterion, optimizer,
               train_loader=DataLoader(dataset=db.train_dataset(), batch_size=batch_size, shuffle=True),

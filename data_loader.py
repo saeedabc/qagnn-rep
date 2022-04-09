@@ -122,7 +122,9 @@ class QAGNN_RawDataLoader:
         li = []
         for i in range(len(qad)):  # graph i
             node_ids = qad.node_concept_ids[i]  # (N, )
-            node_embs = self.cp_emb[node_ids, :]  # (N, 1024) # TODO
+            node_embs = torch.zeros((node_ids.size(0), self.cp_dim))
+            node_embs[1:, :] = self.cp_emb[node_ids[1:] - 1, :]  # (N, 1024) # TODO
+
             # node_embs = torch.normal(mean=0, std=0.5, size=(node_ids.size(0), 24))  # (N, d)
             node_types = make_one_hot(qad.node_type_ids[i], self.n_ntype)  # (N, n_ntype)
             node_scores = qad.node_scores[i]  # (N, 1)

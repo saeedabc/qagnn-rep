@@ -25,47 +25,49 @@ class GNN(nn.Module):
         self.hid_dim = hid_dim
         self.dropout = dropout
         
-        self.relu = nn.ReLU()
+        self.act = nn.ReLU()
         # self.gelu
 
-        self.x2h = nn.Linear(x_init_dim, hid_dim)
-        self.ntype_enc = nn.Linear(n_ntype, hid_dim // 2)
-        self.nscore_enc = nn.Linear(1, hid_dim // 2)
-        
-        self.h2h = nn.Linear(2 * hid_dim, hid_dim)
+        # self.x2h = nn.Linear(x_init_dim, hid_dim)
+        self.ntype_nscore_enc = nn.Linear(n_ntype + 1, hid_dim // 2)
+
+        gc_hid_dim = x_init_dim + hid_dim // 2
+
+        # self.h2h = nn.Linear(2 * hid_dim, hid_dim)
 
         self.etype_enc = nn.Sequential(
             torch.nn.Linear(n_ntype + n_etype + n_ntype, hid_dim),
             # nn.BatchNorm1d(hid_dim),
-            self.relu,
+            self.act,
             nn.Linear(hid_dim, hid_dim),
-            self.relu
+            self.act
         )
 
         # self.cmp = CustomMessagePassing(hid_dim, n_ntype, n_etype)
-        self.gat_conv = GATConv(hid_dim, hid_dim, add_self_loops=False, edge_dim=hid_dim)
+        self.gat_conv = GATConv(gc_hid_dim, gc_hid_dim, add_self_loops=False, edge_dim=hid_dim)
 
         self.mlp = nn.Sequential(
             nn.Linear(hid_dim, hid_dim//2),
-            self.relu,
+            self.act,
             nn.Linear(hid_dim//2, 1)
             # nn.Sigmoid()
         )
 
     def forward(self, x, node_ids, node_types, node_scores, edge_index, edge_type, edge_attr, node2graph):
-        h = self.x2h(x)  # D
-        node_types = self.ntype_enc(node_types)  # n_ntype --> D/2
-        node_scores = self.nscore_enc(node_scores)  # 1 --> D/2
-        
-        h = self.h2h(torch.cat([h, node_types, node_scores], dim=-1))  # 2D --> D
-        h = self.relu(h)
+        h = x
+        # h = self.x2h(x)  # cp_dim --> D
+
+        node_extras = self.ntype_nscore_enc(torch.cat([node_types, node_scores], dim=-1))  # n_ntype + 1 --> D/2
+
+        h = torch.cat([h, node_extras], dim=-1)  # 2D --> D
+        # h = self.act(h)
 
         edge_attr = self.etype_enc(edge_attr)
 
         h = self.gat_conv(x=h, edge_index=edge_index, edge_attr=edge_attr)
         
         h = global_mean_pool(h, batch=node2graph)
-        h = self.relu(h)
+        h = self.act(h)
 
         # h = F.dropout(h, p=self.dropout, training=self.training)
 
