@@ -6,10 +6,14 @@ from torch_geometric.data import Data
 from data_utils import load_input_tensors, load_sparse_adj_data_with_contextnode, MODEL_NAME_TO_CLASS
 
 
+def make_one_hot(tensor, n_cats):
+    return torch.nn.functional.one_hot(tensor, n_cats).float()
+
+
 class QADataWrapper:
     def __init__(self, qids, labels, text_data, node_data, adj_data):                           # before:
         self.qids = qids                                                                        # n_qs
-        self.labels = torch.repeat_interleave(labels, 5)                                        # (n_qs, )
+        self.labels = make_one_hot(labels, 5).view(-1)                                          # (n_qs,)
         self.text_data = [x.view(-1, x.size(2)) for x in text_data]                             # 4 * (n_qs, n_as, max_seq_len)
         self.node_data = [x.view(x.size(0) * x.size(1), *x.size()[2:]) for x in node_data]      # 2 * (n_qs, n_as, N), (n_qs, n_as, N, 1), (n_qs, n_as)
         self.adj_data = [[t for qa in x for t in qa] for x in adj_data]                         # n_qs * 5 * (2, E), n_qs * 5 * (E, )
@@ -108,22 +112,19 @@ class QAGNN_RawDataLoader:
         # adj_data = [x[:lim] for x in adj_data]
         return QADataWrapper(qids, labels, encoder_data, decoder_data, adj_data)
 
-    def _one_hot(self, tensor, n_cats):
-        return torch.nn.functional.one_hot(tensor, n_cats).float()
+    def train_dataset(self): return self._dataset(self.train_qad)
 
-    def dataset(self, which):
-        qad = {
-            'train': self.train_qad,
-            'dev': self.dev_qad,
-            'test': self.test_qad
-        }.get(which)
+    def dev_dataset(self): return self._dataset(self.dev_qad)
 
+    def test_dataset(self): return self._dataset(self.test_qad)
+
+    def _dataset(self, qad):
         li = []
         for i in range(len(qad)):  # graph i
             node_ids = qad.node_concept_ids[i]  # (N, )
             node_embs = self.cp_emb[node_ids, :]  # (N, 1024) # TODO
             # node_embs = torch.normal(mean=0, std=0.5, size=(node_ids.size(0), 24))  # (N, d)
-            node_types = self._one_hot(qad.node_type_ids[i], self.n_ntype)  # (N, n_ntype)
+            node_types = make_one_hot(qad.node_type_ids[i], self.n_ntype)  # (N, n_ntype)
             node_scores = qad.node_scores[i]  # (N, 1)
             # x = torch.cat([node_embs, node_types, node_scores], dim=1)  # (N, d + n_ntype + 1)
 
