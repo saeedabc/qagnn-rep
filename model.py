@@ -47,7 +47,7 @@ class GNN(nn.Module):
         self.gat_conv = GATConv(gc_hid_dim, gc_hid_dim, add_self_loops=False, edge_dim=hid_dim)
 
         self.mlp = nn.Sequential(
-            nn.Linear(hid_dim, hid_dim//2),
+            nn.Linear(gc_hid_dim, hid_dim//2),
             self.act,
             nn.Linear(hid_dim//2, 1)
             # nn.Sigmoid()
