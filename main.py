@@ -6,6 +6,7 @@ from torch_geometric.loader import DataLoader as GraphDataLoader
 from tqdm import tqdm
 import json
 import pathlib
+import matplotlib.pyplot as plt
 
 from data_loader import QAGNN_RawDataLoader
 from model import QAGNN
@@ -51,7 +52,7 @@ def main(mode, seed, lr, batch_size, n_epochs, n_ntype, n_etype, max_n_nodes, ma
         train(device, model, criterion, optimizer, scheduler, train_loaders=train_dls, dev_loaders=dev_dls, n_epochs=n_epochs)
 
         pathlib.Path('/'.join(save_path.split('/')[:-1])).mkdir(parents=True, exist_ok=True)
-        torch.save(model.state_dict(), open(save_path, 'w'))
+        torch.save(model.state_dict(), save_path)
 
     if 'test' in mode:
         # model.load_state_dict(torch.load(open(save_path, 'r')))  # ; model.eval()
@@ -68,6 +69,7 @@ def train(device, model, criterion, optimizer, scheduler, train_loaders, dev_loa
     # print_every_n_steps = n_batches
     print(n_batches)
     acc_list = []; loss_list = []
+    lrs = []
     for epoch in range(n_epochs):
         for i, (tbatch, gbatch) in tqdm(enumerate(zip(*train_loaders))):
             optimizer.zero_grad()
@@ -82,6 +84,8 @@ def train(device, model, criterion, optimizer, scheduler, train_loaders, dev_loa
 
             loss.backward()
             optimizer.step()
+            
+            lrs.append(optimizer.param_groups[0]["lr"])
             scheduler.step()
 
             with torch.no_grad():
@@ -97,8 +101,14 @@ def train(device, model, criterion, optimizer, scheduler, train_loaders, dev_loa
                     avg_loss = sum(loss_list) / len(loss_list)
                     print(f'#Step[{step + 1}], Average Train Acc: {avg_acc}, Average Train Loss: {avg_loss}')
                     acc_list = []; loss_list = []
-
+                    plot(lrs)
     evaluate(device, model, criterion, dev_loaders)
+
+
+def plot(lrs):
+    plt.plot(lrs)
+    pathlib.Path('plots').mkdir(parents=True, exist_ok=True)
+    plt.savefig('plots/lrs.png', dpi=400)
 
 
 def evaluate(device, model, criterion, loaders):
