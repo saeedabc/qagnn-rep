@@ -71,7 +71,8 @@ def train(device, model, criterion, optimizer, train_loaders, dev_loaders, n_epo
         for i, (tbatch, gbatch) in tqdm(enumerate(zip(*train_loaders))):
             optimizer.zero_grad()
 
-            tbatch.to(device); gbatch.to(device)
+            tbatch = [x.to(device) for x in tbatch]
+            gbatch.to(device)
 
             out = model(tbatch, gbatch).squeeze(1)
             target = gbatch.y
@@ -106,7 +107,8 @@ def evaluate(device, model, criterion, loaders):
     n_correct = 0
     with torch.no_grad():
         for i, (tbatch, gbatch) in tqdm(enumerate(zip(*loaders))):
-            tbatch.to(device); gbatch.to(device)
+            tbatch = [x.to(device) for x in tbatch]
+            gbatch.to(device)
 
             out = model(tbatch, gbatch).squeeze(1)
             target = gbatch.y
