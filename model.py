@@ -27,7 +27,8 @@ class QAGNN(nn.Module):
         )
 
     def forward(self, tbatch, gbatch):
-        text_hid_states = self.text_enc(input_ids=tbatch.input_ids, token_type_ids=tbatch.segment_ids, attention_mask=tbatch.input_mask)
+        input_ids, input_masks, segment_ids, output_masks = tbatch
+        text_hid_states = self.text_enc(input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_masks)
         last_hid_states = text_hid_states[-1][-1]
         qa_emb = last_hid_states.mean(dim=0)  # (qa_dim,)
 
