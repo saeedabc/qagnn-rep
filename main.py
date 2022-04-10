@@ -27,7 +27,7 @@ def main(mode, seed, lr, batch_size, n_epochs, n_ntype, n_etype, max_n_nodes, ma
                              max_node_num=max_n_nodes, max_seq_length=max_seq_len)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = QAGNN(x_init_dim=db.cp_dim, hid_dim=hid_dim, n_ntype=n_ntype, n_etype=n_etype, dropout=dropout).to(device)  # TODO
+    model = QAGNN(lm_name=lm_name, hid_dim=hid_dim, n_ntype=n_ntype, n_etype=n_etype, dropout=dropout).to(device)  # TODO
     print(model)
     print('# model params:', sum(p.numel() for p in model.parameters() if p.requires_grad))
 

@@ -4,14 +4,14 @@
 
     "lr": 2e-3,
     "batch_size": 50,
-    "n_epochs": 10,
+    "n_epochs": 3,
 
     "n_ntype": 4,
     "n_etype": 38,
     "max_n_nodes": 200,
     "max_seq_len": 128,
 
-    "hid_dim": 256,
+    "hid_dim": 128,
 
     "dropout": 0.2,
     "weight_decay": 0.01,
