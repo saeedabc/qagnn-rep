@@ -11,8 +11,10 @@ class QAGNN(nn.Module):
         super(QAGNN, self).__init__()
 
         self.text_enc = AutoModel.from_pretrained(lm_name, output_hidden_states=True)
-        self.qa_dim = self.text_enc.config.hidden_size
+        for param in self.text_enc.base_model.parameters():
+            param.requires_grad = False
 
+        self.qa_dim = self.text_enc.config.hidden_size
         self.gnn = GNN(self.qa_dim, hid_dim, n_ntype, n_etype, dropout)
 
         self.mlp = nn.Sequential(
@@ -25,9 +27,8 @@ class QAGNN(nn.Module):
         )
 
     def forward(self, batch):
-        input_ids, attention_mask, token_type_ids, output_mask = batch.text_data
 
-        text_hid_states = self.text_enc(input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask)
+        text_hid_states = self.text_enc(input_ids=batch.input_ids, token_type_ids=batch.segment_ids, attention_mask=batch.input_mask)
         last_hid_states = text_hid_states[-1][-1]
         qa_emb = last_hid_states.mean(dim=0)  # (qa_dim,)
 

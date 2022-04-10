@@ -139,8 +139,11 @@ class QAGNN_RawDataLoader:
 
             y = qad.labels[i].float()
 
+            input_ids, input_mask, segment_ids, output_mask = [x[i] for x in qad.text_data]
+
             d = Data(x=node_embs, node_ids=node_ids, node_types=node_types, node_scores=node_scores,
-                     edge_index=edge_index, edge_type=edge_type, edge_attr=edge_attr, y=y)
+                     edge_index=edge_index, edge_type=edge_type, edge_attr=edge_attr, y=y,
+                     input_ids=input_ids, input_mask=input_mask, segment_ids=segment_ids, output_mask=output_mask)
 
             li.append(d)
         return li
