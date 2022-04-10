@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing, GATConv, global_mean_pool
+from torch_geometric.data.batch import Batch
 from torch_geometric.utils import add_self_loops, degree
 from transformers import AutoModel, BertModel
 
@@ -30,7 +31,8 @@ class QAGNN(nn.Module):
         input_ids, input_masks, segment_ids, output_masks = tbatch
         text_hid_states = self.text_enc(input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_masks)
         last_hid_states = text_hid_states[-1][-1]
-        qa_emb = last_hid_states.mean(dim=0)  # (qa_dim,)
+        qa_emb = last_hid_states.mean(dim=0)  # (tb, qa_dim,)
+        qa_emb = Batch.from_data_list(data_list=qa_emb, follow_batch=gbatch.batch)  # ([gb,] qa_dim,)
 
         qa_node_emb, pooled_graph_emb = self.gnn(qa_emb=qa_emb, x=gbatch.x, node_ids=gbatch.node_ids, node_types=gbatch.node_types, node_scores=gbatch.node_scores,
                         edge_index=gbatch.edge_index, edge_type=gbatch.edge_type, edge_attr=gbatch.edge_attr, node2graph=gbatch.batch)  # (hid_dim,), (hid_dim,)
