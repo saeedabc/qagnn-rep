@@ -41,13 +41,14 @@ def main(mode, seed, lr, batch_size, n_epochs, n_ntype, n_etype, max_n_nodes, ma
 
     if 'train' in mode:
         optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)
+        scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=lr, max_lr=0.1, step_size_up=200, mode="triangular2")
 
         train_text_ds, train_graph_ds = db.train_dataset()
         train_dls = DataLoader(train_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=train_graph_ds, batch_size=batch_size, shuffle=True)
         dev_text_ds, dev_graph_ds = db.dev_dataset()
         dev_dls = DataLoader(dev_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=dev_graph_ds, batch_size=batch_size, shuffle=True)
 
-        train(device, model, criterion, optimizer, train_loaders=train_dls, dev_loaders=dev_dls, n_epochs=n_epochs)
+        train(device, model, criterion, optimizer, scheduler, train_loaders=train_dls, dev_loaders=dev_dls, n_epochs=n_epochs)
 
         pathlib.Path('/'.join(save_path.split('/')[:-1])).mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), open(save_path, 'w'))
@@ -60,7 +61,7 @@ def main(mode, seed, lr, batch_size, n_epochs, n_ntype, n_etype, max_n_nodes, ma
         evaluate(device, model, criterion, loaders=test_dls)
 
 
-def train(device, model, criterion, optimizer, train_loaders, dev_loaders, n_epochs=10, print_every_n_steps=20):
+def train(device, model, criterion, optimizer, scheduler, train_loaders, dev_loaders, n_epochs=10, print_every_n_steps=20):
     model.train()
 
     n_batches = len(train_loaders[1])
@@ -81,6 +82,7 @@ def train(device, model, criterion, optimizer, train_loaders, dev_loaders, n_epo
 
             loss.backward()
             optimizer.step()
+            scheduler.step()
 
             with torch.no_grad():
                 pred = torch.round(torch.sigmoid(out))
