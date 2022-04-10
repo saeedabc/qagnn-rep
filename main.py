@@ -49,28 +49,33 @@ def main(mode, seed, lr, batch_size, n_epochs, n_ntype, n_etype, max_n_nodes, ma
         dev_text_ds, dev_graph_ds = db.dev_dataset()
         dev_dls = DataLoader(dev_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=dev_graph_ds, batch_size=batch_size, shuffle=True)
 
-        train(device, model, criterion, optimizer, scheduler, train_loaders=train_dls, dev_loaders=dev_dls, n_epochs=n_epochs)
+        train(device, model, criterion, optimizer, scheduler, batch_size, train_loaders=train_dls, dev_loaders=dev_dls, n_epochs=n_epochs)
 
         pathlib.Path('/'.join(save_path.split('/')[:-1])).mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), save_path)
 
     if 'test' in mode:
-        # model.load_state_dict(torch.load(open(save_path, 'r')))  # ; model.eval()
+        # model.load_state_dict(torch.load(save_path))  # ; model.eval()
         test_text_ds, test_graph_ds = db.test_dataset()
         test_dls = DataLoader(test_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=test_graph_ds, batch_size=batch_size, shuffle=True)
 
         evaluate(device, model, criterion, loaders=test_dls)
 
 
-def train(device, model, criterion, optimizer, scheduler, train_loaders, dev_loaders, n_epochs=10, print_every_n_steps=20):
+def train(device, model, criterion, optimizer, scheduler, batch_size, train_loaders, dev_loaders, n_epochs, print_every_n_steps=25):
     model.train()
 
     n_batches = len(train_loaders[1])
-    # print_every_n_steps = n_batches
-    print(n_batches)
-    acc_list = []; loss_list = []
+
+    running_loss = 0
+    n_correct, n_total = 0, 0
+
+    acc_list, loss_list = [], []
+    dev_acc_list, dev_loss_list = [], []
+
     lrs = []
     for epoch in range(n_epochs):
+        print(f'Epoch[{epoch}]: batch_size={batch_size}, n_batches={n_batches}')
         for i, (tbatch, gbatch) in tqdm(enumerate(zip(*train_loaders))):
             optimizer.zero_grad()
 
@@ -90,33 +95,38 @@ def train(device, model, criterion, optimizer, scheduler, train_loaders, dev_loa
 
             with torch.no_grad():
                 pred = torch.round(torch.sigmoid(out))
-                acc = torch.sum(pred == target) / gbatch.num_graphs
-                acc_list.append(acc)
-
-                loss_list.append(loss)
+                n_correct += torch.sum(pred == target)
+                n_total += gbatch.num_graphs
+                running_loss += loss
 
                 step = epoch * n_batches + i
                 if (step + 1) % print_every_n_steps == 0:
-                    avg_acc = sum(acc_list) / len(acc_list)
-                    avg_loss = sum(loss_list) / len(loss_list)
-                    print(f'#Step[{step + 1}], Average Train Acc: {avg_acc}, Average Train Loss: {avg_loss}')
-                    acc_list = []; loss_list = []
-                    plot(lrs)
-    evaluate(device, model, criterion, dev_loaders)
+                    train_avg_acc = n_correct / n_total
+                    acc_list.append(train_avg_acc)
 
+                    train_avg_loss = running_loss / print_every_n_steps
+                    loss_list.append(train_avg_loss)
 
-def plot(lrs):
-    plt.plot(lrs)
-    pathlib.Path('plots').mkdir(parents=True, exist_ok=True)
-    plt.savefig('plots/lrs.png', dpi=400)
+                    print(f'Epoch[{epoch}], Step[{step + 1}], Avg Train Acc: {train_avg_acc}, Avg Train Loss: {train_avg_loss}')
+
+                    dev_avg_acc, dev_avg_loss = evaluate(device, model, criterion, dev_loaders)
+                    dev_acc_list.append(dev_avg_acc)
+                    dev_loss_list.append(dev_avg_loss)
+
+                    running_loss = 0
+                    n_correct, n_total = 0, 0
+
+    stats = acc_list, loss_list, dev_acc_list, dev_loss_list, lrs
+    plot(*stats)
+    return stats
 
 
 def evaluate(device, model, criterion, loaders):
     model.eval()
 
-    loss_list = []
-    acc_list = []
+    running_loss = 0
     n_correct = 0
+    n_total = 0
     with torch.no_grad():
         for i, (tbatch, gbatch) in tqdm(enumerate(zip(*loaders))):
             tbatch = [x.to(device) for x in tbatch]
@@ -127,15 +137,47 @@ def evaluate(device, model, criterion, loaders):
             loss = criterion(out, target)
 
             pred = torch.round(torch.sigmoid(out))
-            n_correct_batch = torch.sum(pred == target); n_correct += n_correct_batch
-            batch_acc = n_correct_batch / gbatch.num_graphs; acc_list.append(batch_acc)
-            loss_list.append(loss)
+            n_correct += torch.sum(pred == target)
+            n_total += target.size(0)
+            running_loss += loss
 
-            print(f'Eval Batch[{i + 1}]: Acc={batch_acc}, Loss={loss}')
+    avg_acc = 100 * (n_correct / n_total)
+    avg_loss = running_loss / len(loaders[1])
+    print(f'\tEval: Avg Acc={avg_acc:.2f}, Avg Loss={avg_loss:.4f}')
+    return avg_acc, avg_loss
 
-    total_acc = n_correct / len(loaders[1])
-    print(f'Total Eval: Acc={total_acc}')
-    return loss_list, acc_list, total_acc
+
+def plot(acc_list, loss_list, dev_acc_list, dev_loss_list, lrs):
+    def plot_acc():
+        plt.plot(acc_list, '-o')
+        plt.plot(dev_acc_list, '-o')
+        plt.xlabel('step')
+        plt.ylabel('accuracy')
+        plt.legend(['Train', 'Valid'])
+        plt.title('Train vs Valid Accuracy')
+        plt.show()
+        plt.savefig('plots/acc_trend.png', dpi=500)
+
+    def plot_loss():
+        plt.plot(loss_list, '-o')
+        plt.plot(dev_loss_list, '-o')
+        plt.xlabel('step')
+        plt.ylabel('losses')
+        plt.legend(['Train', 'Valid'])
+        plt.title('Train vs Valid Losses')
+        plt.show()
+        plt.savefig('plots/loss_trend.png', dpi=500)
+
+    def plot_lrs():
+        plt.plot(lrs)
+        plt.xlabel('step')
+        plt.ylabel('lr')
+        plt.savefig('plots/lrs.png', dpi=500)
+
+    pathlib.Path('plots').mkdir(parents=True, exist_ok=True)
+    plot_acc()
+    plot_loss()
+    plot_lrs()
 
 
 if __name__ == '__main__':
