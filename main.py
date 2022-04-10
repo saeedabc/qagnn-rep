@@ -1,7 +1,8 @@
 import random
 import numpy as np
 import torch
-from torch_geometric.loader import DataLoader
+from torch.utils.data import DataLoader
+from torch_geometric.loader import DataLoader as GraphDataLoader
 from tqdm import tqdm
 import json
 import pathlib
@@ -41,34 +42,39 @@ def main(mode, seed, lr, batch_size, n_epochs, n_ntype, n_etype, max_n_nodes, ma
     if 'train' in mode:
         optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)
 
-        train(device, model, criterion, optimizer,
-              train_loader=DataLoader(dataset=db.train_dataset(), batch_size=batch_size, shuffle=True),
-              dev_loader=DataLoader(dataset=db.dev_dataset(), batch_size=batch_size, shuffle=True),
-              n_epochs=n_epochs)
+        train_text_ds, train_graph_ds = db.train_dataset()
+        train_dls = DataLoader(train_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=train_graph_ds, batch_size=batch_size, shuffle=True)
+        dev_text_ds, dev_graph_ds = db.dev_dataset()
+        dev_dls = DataLoader(dev_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=dev_graph_ds, batch_size=batch_size, shuffle=True)
+
+        train(device, model, criterion, optimizer, train_loaders=train_dls, dev_loaders=dev_dls, n_epochs=n_epochs)
 
         pathlib.Path('/'.join(save_path.split('/')[:-1])).mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), open(save_path, 'w'))
 
     if 'test' in mode:
-        model.load_state_dict(torch.load(open(save_path, 'r')))  # ; model.eval()
-        evaluate(device, model, criterion, loader=DataLoader(dataset=db.test_dataset(), batch_size=batch_size, shuffle=True))
+        # model.load_state_dict(torch.load(open(save_path, 'r')))  # ; model.eval()
+        test_text_ds, test_graph_ds = db.test_dataset()
+        test_dls = DataLoader(test_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=test_graph_ds, batch_size=batch_size, shuffle=True)
+
+        evaluate(device, model, criterion, loaders=test_dls)
 
 
-def train(device, model, criterion, optimizer, train_loader, dev_loader, n_epochs=10, print_every_n_steps=20):
+def train(device, model, criterion, optimizer, train_loaders, dev_loaders, n_epochs=10, print_every_n_steps=20):
     model.train()
 
-    n_batches = len(train_loader)
+    n_batches = len(train_loaders[1])
     # print_every_n_steps = n_batches
     print(n_batches)
     acc_list = []; loss_list = []
     for epoch in range(n_epochs):
-        for i, batch in enumerate(tqdm(train_loader)):
+        for i, (tbatch, gbatch) in tqdm(enumerate(zip(*train_loaders))):
             optimizer.zero_grad()
 
-            batch.to(device)
+            tbatch.to(device); gbatch.to(device)
 
-            out = model(batch).squeeze(1)
-            target = batch.y
+            out = model(tbatch, gbatch).squeeze(1)
+            target = gbatch.y
 
             loss = criterion(out, target)
 
@@ -77,7 +83,7 @@ def train(device, model, criterion, optimizer, train_loader, dev_loader, n_epoch
 
             with torch.no_grad():
                 pred = torch.round(torch.sigmoid(out))
-                acc = torch.sum(pred == target) / batch.num_graphs
+                acc = torch.sum(pred == target) / gbatch.num_graphs
                 acc_list.append(acc)
 
                 loss_list.append(loss)
@@ -89,31 +95,31 @@ def train(device, model, criterion, optimizer, train_loader, dev_loader, n_epoch
                     print(f'#Step[{step + 1}], Average Train Acc: {avg_acc}, Average Train Loss: {avg_loss}')
                     acc_list = []; loss_list = []
 
-    evaluate(device, model, criterion, dev_loader)
+    evaluate(device, model, criterion, dev_loaders)
 
 
-def evaluate(device, model, criterion, loader):
+def evaluate(device, model, criterion, loaders):
     model.eval()
 
     loss_list = []
     acc_list = []
     n_correct = 0
     with torch.no_grad():
-        for i, batch in enumerate(tqdm(loader)):
-            batch = batch.to(device)
+        for i, (tbatch, gbatch) in tqdm(enumerate(zip(*loaders))):
+            tbatch.to(device); gbatch.to(device)
 
-            out = model(batch).squeeze(1)
-            target = batch.y
+            out = model(tbatch, gbatch).squeeze(1)
+            target = gbatch.y
             loss = criterion(out, target)
 
             pred = torch.round(torch.sigmoid(out))
             n_correct_batch = torch.sum(pred == target); n_correct += n_correct_batch
-            batch_acc = n_correct_batch / batch.num_graphs; acc_list.append(batch_acc)
+            batch_acc = n_correct_batch / gbatch.num_graphs; acc_list.append(batch_acc)
             loss_list.append(loss)
 
             print(f'Eval Batch[{i + 1}]: Acc={batch_acc}, Loss={loss}')
 
-    total_acc = n_correct / len(loader)
+    total_acc = n_correct / len(loaders[1])
     print(f'Total Eval: Acc={total_acc}')
     return loss_list, acc_list, total_acc
 

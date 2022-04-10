@@ -26,14 +26,13 @@ class QAGNN(nn.Module):
             # nn.Sigmoid()
         )
 
-    def forward(self, batch):
-
-        text_hid_states = self.text_enc(input_ids=batch.input_ids, token_type_ids=batch.segment_ids, attention_mask=batch.input_mask)
+    def forward(self, tbatch, gbatch):
+        text_hid_states = self.text_enc(input_ids=tbatch.input_ids, token_type_ids=tbatch.segment_ids, attention_mask=tbatch.input_mask)
         last_hid_states = text_hid_states[-1][-1]
         qa_emb = last_hid_states.mean(dim=0)  # (qa_dim,)
 
-        qa_node_emb, pooled_graph_emb = self.gnn(qa_emb=qa_emb, x=batch.x, node_ids=batch.node_ids, node_types=batch.node_types, node_scores=batch.node_scores,
-                        edge_index=batch.edge_index, edge_type=batch.edge_type, edge_attr=batch.edge_attr, node2graph=batch.batch)  # (hid_dim,), (hid_dim,)
+        qa_node_emb, pooled_graph_emb = self.gnn(qa_emb=qa_emb, x=gbatch.x, node_ids=gbatch.node_ids, node_types=gbatch.node_types, node_scores=gbatch.node_scores,
+                        edge_index=gbatch.edge_index, edge_type=gbatch.edge_type, edge_attr=gbatch.edge_attr, node2graph=gbatch.batch)  # (hid_dim,), (hid_dim,)
 
         emb = torch.concat([qa_emb, qa_node_emb, pooled_graph_emb], dim=-1)
         emb = self.mlp(emb)

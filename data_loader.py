@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn.functional
+from torch.utils.data import Dataset
 from torch_geometric.data import Data
 
 from data_utils import load_input_tensors, load_sparse_adj_data_with_contextnode, MODEL_NAME_TO_CLASS
@@ -112,13 +113,26 @@ class QAGNN_RawDataLoader:
         # adj_data = [x[:lim] for x in adj_data]
         return QADataWrapper(qids, labels, encoder_data, decoder_data, adj_data)
 
-    def train_dataset(self): return self._dataset(self.train_qad)
+    def train_dataset(self): return self._text_dataset(self.train_qad), self._graph_dataset(self.train_qad)
 
-    def dev_dataset(self): return self._dataset(self.dev_qad)
+    def dev_dataset(self): return self._text_dataset(self.dev_qad), self._graph_dataset(self.dev_qad)
 
-    def test_dataset(self): return self._dataset(self.test_qad)
+    def test_dataset(self): return self._text_dataset(self.test_qad), self._graph_dataset(self.test_qad)
 
-    def _dataset(self, qad):
+    def _text_dataset(self, qad):
+        class CustomTextDataset(Dataset):
+            def __init__(self, qad):
+                self.qad = qad
+
+            def __len__(self):
+                return len(self.qad)
+
+            def __getitem__(self, idx):
+                return tuple(x[idx] for x in qad.text_data)
+
+        return CustomTextDataset(qad)
+
+    def _graph_dataset(self, qad):
         li = []
         for i in range(len(qad)):  # graph i
             node_ids = qad.node_concept_ids[i]  # (N, )
@@ -139,11 +153,8 @@ class QAGNN_RawDataLoader:
 
             y = qad.labels[i].float()
 
-            input_ids, input_mask, segment_ids, output_mask = [x[i] for x in qad.text_data]
-
             d = Data(x=node_embs, node_ids=node_ids, node_types=node_types, node_scores=node_scores,
-                     edge_index=edge_index, edge_type=edge_type, edge_attr=edge_attr, y=y,
-                     input_ids=input_ids, input_mask=input_mask, segment_ids=segment_ids, output_mask=output_mask)
+                     edge_index=edge_index, edge_type=edge_type, edge_attr=edge_attr, y=y)
 
             li.append(d)
         return li
