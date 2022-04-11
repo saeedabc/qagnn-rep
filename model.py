@@ -8,18 +8,21 @@ from transformers import AutoModel, BertModel
 
 
 class QAGNN(nn.Module):
-    def __init__(self, lm_name, cp_dim, hid_dim, n_ntype, n_etype, dropout):
+    def __init__(self, lm_name, seq_len, cp_dim, hid_dim, n_ntype, n_etype, dropout):
         super(QAGNN, self).__init__()
 
         self.text_enc = AutoModel.from_pretrained(lm_name, output_hidden_states=True)
         for param in self.text_enc.base_model.parameters():
             param.requires_grad = False
-
         qa_dim = self.text_enc.config.hidden_size
+
+        self.text_att = torch.nn.MultiheadAttention(embed_dim=qa_dim, num_heads=8, dropout=dropout, batch_first=True)
+        self.qa2cp = nn.Linear(seq_len * qa_dim, cp_dim)
+
         self.gnn = GNN(qa_dim, cp_dim, hid_dim, n_ntype, n_etype, dropout)
 
         self.mlp = nn.Sequential(
-            nn.Linear(qa_dim + 2 * hid_dim, 2 * hid_dim),
+            nn.Linear(cp_dim + 2 * hid_dim, 2 * hid_dim),
             nn.ReLU(),
             nn.Linear(2 * hid_dim, hid_dim // 2),
             nn.ReLU(),
@@ -29,10 +32,12 @@ class QAGNN(nn.Module):
 
     def forward(self, tbatch, gbatch):
         input_ids, input_masks, segment_ids, output_masks = tbatch
-        text_hid_states = self.text_enc(input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_masks)
-        last_hid_states = text_hid_states[-1][-1]
-        qa_emb = last_hid_states.mean(dim=1)  # (tb, qa_dim,)
-        
+        text_all_hid_states = self.text_enc(input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_masks)
+        hid_states = text_all_hid_states[-1][-1]  # (tb, seq_len, qa_dim)
+
+        qa_emb = self.text_att(query=hid_states, key=hid_states, value=hid_states, key_padding_mask=output_masks, need_weights=False)  # (tb, seq_len, qa_dim)
+        qa_emb = self.qa2cp(qa_emb.view(qa_emb.size(0), -1))  # (tb, cp_emb)
+
         # qa_emb = Batch.from_data_list(data_list=list(qa_emb), follow_batch=gbatch.batch)  # ([gb,] qa_dim,)
         # qa_emb = Batch(qa_emb, follow_batch=gbatch.batch)
         # print(qa_emb.size(), gbatch.x.size())
@@ -53,8 +58,6 @@ class GNN(nn.Module):
         self.act = nn.ReLU()
         # self.gelu
 
-        self.qa2node = nn.Linear(qa_dim, cp_dim)
-        
         self.ntype_nscore_enc = nn.Linear(n_ntype + 1, hid_dim // 2)
 
         self.x2h = nn.Linear(cp_dim + hid_dim // 2, hid_dim)
@@ -68,7 +71,6 @@ class GNN(nn.Module):
             self.act
         )
 
-        # gc_hid_dim = cp_dim + hid_dim // 2
         self.gat_conv = GATConv(hid_dim, hid_dim, add_self_loops=False, edge_dim=hid_dim)
 
     def forward(self, qa_emb, x, node_ids, node_types, node_scores, edge_index, edge_type, edge_attr, node2graph):
@@ -84,8 +86,9 @@ class GNN(nn.Module):
         def _extract_h0(h, bs):
             h0_selector = range(0, h.size(0), h.size(0) // bs)
             return h[h0_selector, :]
-        
-        x = _working_graph(qa_emb=self.qa2node(qa_emb), x=x)
+
+        assert qa_emb.size(-1) == x.size(-1)
+        x = _working_graph(qa_emb=qa_emb, x=x)
         x_extras = self.ntype_nscore_enc(torch.cat([node_types, node_scores], dim=-1))  # n_ntype + 1 --> D/2
         x = torch.cat([x, x_extras], dim=-1)  # 2D --> D
         x = self.act(x)

@@ -1,6 +1,6 @@
 {
     "mode": ["train", "test"],
-    "seed": 123,
+    "seed": 0,
 
     "lr": 3e-4,
     "batch_size": 32,
@@ -12,7 +12,7 @@
     "max_n_nodes": 200,
     "max_seq_len": 128,
 
-    "hid_dim": 128,
+    "hid_dim": 256,
 
     "dropout": 0.2,
     "weight_decay": 0.01,
