@@ -11,15 +11,21 @@ class QAGNN(nn.Module):
     def __init__(self, lm_name, seq_len, cp_dim, hid_dim, n_ntype, n_etype, dropout):
         super(QAGNN, self).__init__()
 
+        self.dropout = dropout
+
         self.text_enc = AutoModel.from_pretrained(lm_name, output_hidden_states=True)
         for param in self.text_enc.base_model.parameters():
             param.requires_grad = False
-        qa_dim = self.text_enc.config.hidden_size
 
-        self.text_att = torch.nn.MultiheadAttention(embed_dim=qa_dim, num_heads=8, dropout=dropout, batch_first=True)
-        self.qa2cp = nn.Linear(seq_len * qa_dim, cp_dim)
+        self.text_att = torch.nn.MultiheadAttention(embed_dim=hid_dim, num_heads=4, dropout=dropout, batch_first=True)
+        self.qa2cp = nn.Sequential(
+            nn.Linear(seq_len * hid_dim, hid_dim),
+            nn.ReLU(),
+            nn.Linear(hid_dim, cp_dim)
+        )
 
-        self.gnn = GNN(qa_dim, cp_dim, hid_dim, n_ntype, n_etype, dropout)
+        # lm_hid_dim = self.text_enc.config.hidden_size
+        self.gnn = GNN(cp_dim, hid_dim, n_ntype, n_etype, dropout)
 
         self.mlp = nn.Sequential(
             nn.Linear(cp_dim + 2 * hid_dim, 2 * hid_dim),
@@ -33,25 +39,27 @@ class QAGNN(nn.Module):
     def forward(self, tbatch, gbatch):
         input_ids, input_masks, segment_ids, output_masks = tbatch
         text_all_hid_states = self.text_enc(input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_masks)
-        hid_states = text_all_hid_states[-1][-1]  # (tb, seq_len, qa_dim)
+        hid_states = text_all_hid_states[-1][-1]  # (tb, seq_len, lm_hid_dim)
 
-        qa_emb = self.text_att(query=hid_states, key=hid_states, value=hid_states, key_padding_mask=output_masks, need_weights=False)  # (tb, seq_len, qa_dim)
+        qa_emb = self.text_att(query=hid_states, key=hid_states, value=hid_states, key_padding_mask=output_masks, need_weights=False)  # (tb, seq_len, hid_dim)
         qa_emb = self.qa2cp(qa_emb.view(qa_emb.size(0), -1))  # (tb, cp_emb)
 
-        # qa_emb = Batch.from_data_list(data_list=list(qa_emb), follow_batch=gbatch.batch)  # ([gb,] qa_dim,)
+        # qa_emb = Batch.from_data_list(data_list=list(qa_emb), follow_batch=gbatch.batch)  # ([gb,] lm_hid_dim,)
         # qa_emb = Batch(qa_emb, follow_batch=gbatch.batch)
         # print(qa_emb.size(), gbatch.x.size())
         qa_node_emb, pooled_graph_emb = self.gnn(qa_emb=qa_emb, x=gbatch.x, node_ids=gbatch.node_ids, node_types=gbatch.node_types, node_scores=gbatch.node_scores,
                         edge_index=gbatch.edge_index, edge_type=gbatch.edge_type, edge_attr=gbatch.edge_attr, node2graph=gbatch.batch)  # (hid_dim,), (hid_dim,)
         
         emb = torch.concat([qa_emb, qa_node_emb, pooled_graph_emb], dim=-1)
+
+        emb = F.dropout(emb, p=self.dropout, training=self.training)
         emb = self.mlp(emb)
 
         return emb
 
 
 class GNN(nn.Module):
-    def __init__(self, qa_dim, cp_dim, hid_dim, n_ntype, n_etype, dropout):
+    def __init__(self, cp_dim, hid_dim, n_ntype, n_etype, dropout):
         super(GNN, self).__init__()
         self.hid_dim = hid_dim
         self.dropout = dropout
@@ -100,9 +108,8 @@ class GNN(nn.Module):
         h = self.gat_conv(x=h, edge_index=edge_index, edge_attr=edge_attr)
         
         p = global_mean_pool(h, batch=node2graph)
-        # p = self.act(p)
-        # x = F.dropout(x, p=self.dropout, training=self.training)
-        
+        p = self.act(p)
+
         h0 = _extract_h0(h, bs=qa_emb.size(0))
         
         return h0, p

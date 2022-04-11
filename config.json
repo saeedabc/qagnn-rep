@@ -3,18 +3,18 @@
     "seed": 0,
 
     "lr": 3e-4,
-    "batch_size": 32,
-    "n_epochs": 1,
+    "batch_size": 64,
+    "n_epochs": 3,
     "eval_every_n_steps": 80,
 
     "n_ntype": 4,
     "n_etype": 38,
     "max_n_nodes": 200,
-    "max_seq_len": 128,
+    "max_seq_len": 64,
 
     "hid_dim": 256,
 
-    "dropout": 0.2,
+    "dropout": 0.1,
     "weight_decay": 0.01,
 
     "lm_name": "roberta-large",
