@@ -12,7 +12,7 @@
     "max_n_nodes": 200,
     "max_seq_len": 64,
 
-    "hid_dim": 256,
+    "hid_dim": 128,
 
     "dropout": 0.1,
     "weight_decay": 0.01,
