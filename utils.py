@@ -1,7 +1,14 @@
+import time
 
 
-class dotdict(dict):
-    """dot.notation access to dictionary attributes"""
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
+def timeit(method):
+    def timed(*args, **kw):
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()
+
+        m, s = divmod(int(te - ts), 60)
+        print(f'Execution time: ({m}:{s}) min')
+
+        return result
+    return timed

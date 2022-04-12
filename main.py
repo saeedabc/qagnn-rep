@@ -7,6 +7,7 @@ from tqdm import tqdm
 import json
 import pathlib
 import matplotlib.pyplot as plt
+from utils import timeit
 
 from data_loader import QAGNN_RawDataLoader
 from model import QAGNN
@@ -62,6 +63,7 @@ def main(mode, seed, lr, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_et
         evaluate(device, model, criterion, loaders=test_dls)
 
 
+@timeit
 def train(device, model, criterion, optimizer, scheduler, batch_size, train_loaders, dev_loaders, n_epochs, eval_every_n_steps):
     model.train()
 
