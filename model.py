@@ -18,9 +18,9 @@ class QAGNN(nn.Module):
             param.requires_grad = False
 
         lm_hid_dim = self.text_enc.config.hidden_size
-        self.text_att = torch.nn.MultiheadAttention(embed_dim=lm_hid_dim, kdim=hid_dim, vdim=hid_dim, num_heads=4, dropout=dropout, batch_first=True)
+        self.text_att = torch.nn.MultiheadAttention(embed_dim=lm_hid_dim, num_heads=4, dropout=dropout, batch_first=True)
         self.qa2cp = nn.Sequential(
-            nn.Linear(seq_len * hid_dim, hid_dim),
+            nn.Linear(seq_len * lm_hid_dim, hid_dim),
             nn.ReLU(),
             nn.Linear(hid_dim, cp_dim)
         )
@@ -41,9 +41,8 @@ class QAGNN(nn.Module):
         text_all_hid_states = self.text_enc(input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_masks)
         hid_states = text_all_hid_states[-1][-1]  # (tb, seq_len, lm_hid_dim)
 
-        qa_emb = self.text_att(query=hid_states, key=hid_states, value=hid_states, key_padding_mask=output_masks, need_weights=False)  # (tb, seq_len, lm_hid_dim)
-        qa_emb = self.qa2cp(qa_emb.view(qa_emb.size(0), -1))  # (tb, cp_emb)
-
+        qa_emb, _ = self.text_att(query=hid_states, key=hid_states, value=hid_states, key_padding_mask=output_masks, need_weights=False)  # (tb, seq_len, lm_hid_dim)
+        qa_emb = self.qa2cp(qa_emb.contiguous().view(qa_emb.size(0), -1))  # (tb, cp_emb)
         # qa_emb = Batch.from_data_list(data_list=list(qa_emb), follow_batch=gbatch.batch)  # ([gb,] lm_hid_dim,)
         # qa_emb = Batch(qa_emb, follow_batch=gbatch.batch)
         # print(qa_emb.size(), gbatch.x.size())

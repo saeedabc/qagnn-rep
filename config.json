@@ -2,10 +2,10 @@
     "mode": ["train", "test"],
     "seed": 0,
 
-    "lr": 3e-4,
-    "batch_size": 64,
-    "n_epochs": 3,
-    "eval_every_n_steps": 80,
+    "lr": 1e-3,
+    "batch_size": 128,
+    "n_epochs": 5,
+    "eval_every_n_steps": 200,
 
     "n_ntype": 4,
     "n_etype": 38,
