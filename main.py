@@ -34,9 +34,9 @@ def main(mode, seed, lr, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_et
     print(model)
     print('# model params:', sum(p.numel() for p in model.parameters() if p.requires_grad))
 
-    if torch.cuda.device_count() > 1:
-        print("Let's use", torch.cuda.device_count(), "GPUs!")
-        model = torch.nn.DataParallel(model)
+    # if torch.cuda.device_count() > 1:
+    #     print("Let's use", torch.cuda.device_count(), "GPUs!")
+    #     model = torch.nn.DataParallel(model)
 
     save_path = f'saved_models/csqa/lm_{lm_name}_hiddim_{hid_dim}_batchsize_{batch_size}_seed_{seed}.pth'
     criterion = torch.nn.BCEWithLogitsLoss()
@@ -56,7 +56,9 @@ def main(mode, seed, lr, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_et
         torch.save(model.state_dict(), save_path)
 
     if 'test' in mode:
-        # model.load_state_dict(torch.load(save_path))  # ; model.eval()
+        if 'train' not in mode:
+            model.load_state_dict(torch.load(save_path))  # ; model.eval()
+
         test_text_ds, test_graph_ds = db.test_dataset()
         test_dls = DataLoader(test_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=test_graph_ds, batch_size=batch_size, shuffle=True)
 
@@ -154,7 +156,7 @@ def plot(acc_list, loss_list, dev_acc_list, dev_loss_list, lrs):
         plt.figure()
         plt.plot(acc_list, '-o')
         plt.plot(dev_acc_list, '-o')
-        plt.xlabel('step')
+        plt.xlabel('milestone')
         plt.ylabel('accuracy')
         plt.legend(['Train', 'Valid'])
         plt.title('Train vs Valid Accuracy')
@@ -165,7 +167,7 @@ def plot(acc_list, loss_list, dev_acc_list, dev_loss_list, lrs):
         plt.figure()
         plt.plot(loss_list, '-o')
         plt.plot(dev_loss_list, '-o')
-        plt.xlabel('step')
+        plt.xlabel('milestone')
         plt.ylabel('losses')
         plt.legend(['Train', 'Valid'])
         plt.title('Train vs Valid Losses')

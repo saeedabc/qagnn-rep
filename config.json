@@ -4,7 +4,7 @@
 
     "lr": 1e-3,
     "batch_size": 128,
-    "n_epochs": 5,
+    "n_epochs": 3,
     "eval_every_n_steps": 200,
 
     "n_ntype": 4,
