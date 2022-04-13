@@ -39,7 +39,7 @@ class QAGNN(nn.Module):
         input_ids, input_masks, segment_ids, output_masks = tbatch
         lm_all_hid_states = self.text_enc(input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_masks)
         seq_embs = lm_all_hid_states[-1][-1]  # (tb, seq_len, lm_hid_dim)
-        qa_emb = self.text_enc.pooler(seq_embs).squeeze()  # (tb, lm_hid_dim)
+        qa_emb = self.text_enc.pooler(seq_embs).squeeze(1)  # (tb, lm_hid_dim)
 
         # qa_emb, _ = self.text_att(query=hid_states, key=hid_states, value=hid_states, key_padding_mask=output_masks, need_weights=False)  # (tb, seq_len, lm_hid_dim)
         # qa_emb = self.qa2cp(qa_emb.contiguous().view(qa_emb.size(0), -1))  # (tb, cp_emb)

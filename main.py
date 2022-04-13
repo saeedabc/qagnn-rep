@@ -30,20 +30,21 @@ def main(mode, seed, lr, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_et
                              max_node_num=max_n_nodes, max_seq_length=max_seq_len)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = QAGNN(lm_name=lm_name, seq_len=max_seq_len, cp_dim=db.cp_dim, hid_dim=hid_dim, n_ntype=n_ntype, n_etype=n_etype, dropout=dropout).to(device)  # TODO
+    model = QAGNN(lm_name=lm_name, seq_len=max_seq_len, cp_dim=db.cp_dim, hid_dim=hid_dim, n_ntype=n_ntype, n_etype=n_etype, dropout=dropout).to(device)
+    # if torch.cuda.device_count() > 1:
+    #    print("Let's use", torch.cuda.device_count(), "GPUs!")
+    #    model = torch.nn.DataParallel(model)
+
     print(model)
     print('# model params:', sum(p.numel() for p in model.parameters() if p.requires_grad))
 
-    # if torch.cuda.device_count() > 1:
-    #     print("Let's use", torch.cuda.device_count(), "GPUs!")
-    #     model = torch.nn.DataParallel(model)
 
     save_path = f'saved_models/csqa/lm_{lm_name}_hiddim_{hid_dim}_batchsize_{batch_size}_seed_{seed}.pth'
     criterion = torch.nn.BCEWithLogitsLoss()
 
     if 'train' in mode:
         optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)
-        scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=lr, max_lr=3e-2, step_size_up=250, mode="triangular2")
+        scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=lr, max_lr=7e-3, step_size_up=250, mode="triangular2")
 
         train_text_ds, train_graph_ds = db.train_dataset()
         train_dls = DataLoader(train_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=train_graph_ds, batch_size=batch_size, shuffle=True)
@@ -95,26 +96,20 @@ def train(device, model, criterion, optimizer, scheduler, batch_size, train_load
             optimizer.step()
             
             lrs.append(optimizer.param_groups[0]["lr"])
-            scheduler.step()
+            # scheduler.step()
 
             with torch.no_grad():
                 pred = torch.round(torch.sigmoid(out))
-                n_correct += torch.sum(pred == target).item()
-                n_total += gbatch.num_graphs
-                running_loss += loss.item()
-
-                train_acc = n_correct / n_total
-                acc_list.append(train_acc); n_correct, n_total = 0, 0
-
-                train_avg_loss = running_loss / eval_every_n_steps
-                loss_list.append(train_avg_loss); running_loss = 0
+                n_correct = torch.sum(pred == target).item(); n_total = gbatch.num_graphs
+                train_acc = n_correct / n_total; acc_list.append(train_acc);
+                train_avg_loss = loss.item(); loss_list.append(loss.item());
 
                 step = epoch * n_batches + i
-                print(f'Step[{step + 1}], Train: Avg Loss={train_avg_loss:.4f}, Acc={train_acc:.4f}')
+                print(f'Step[{step + 1}], Train: Avg Loss={train_avg_loss:.4f}, Acc={train_acc:.4f}, lr={lrs[-1]}')
 
                 if (step + 1) % eval_every_n_steps == 0:
-                    dev_avg_acc, dev_avg_loss = evaluate(device, model, criterion, dev_loaders)
-                    dev_acc_list.append(dev_avg_acc)
+                    dev_acc, dev_avg_loss = evaluate(device, model, criterion, dev_loaders)
+                    dev_acc_list.append(dev_acc)
                     dev_loss_list.append(dev_avg_loss)
 
     stats = acc_list, loss_list, dev_acc_list, dev_loss_list, lrs
@@ -132,10 +127,10 @@ def evaluate(device, model, criterion, loaders):
         pred_is_one = (pred == 1.)
         pred_is_zero = (pred == 0.)
 
-        tp = sum(pred_eq_lbl & pred_is_one)
-        tn = sum(pred_eq_lbl & pred_is_zero)
-        fp = sum(pred_neq_lbl & pred_is_one)
-        fn = sum(pred_neq_lbl & pred_is_zero)
+        tp = (pred_eq_lbl & pred_is_one).sum()
+        tn = (pred_eq_lbl & pred_is_zero).sum()
+        fp = (pred_neq_lbl & pred_is_one).sum()
+        fn = (pred_neq_lbl & pred_is_zero).sum()
 
         return tp, tn, fp, fn
 
@@ -169,7 +164,7 @@ def evaluate(device, model, criterion, loaders):
     accuracy = (tps + tns) / n
 
     print(f'Eval: Avg Loss={avg_loss:.4f}, Acc={accuracy:.4f}, Prec={precision:.4f}, Rec={recall:.4f}, F1={f1}')
-    return accuracy, loss
+    return accuracy, avg_loss
 
 
 def plot(acc_list, loss_list, dev_acc_list, dev_loss_list, lrs):
