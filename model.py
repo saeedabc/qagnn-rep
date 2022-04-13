@@ -18,41 +18,39 @@ class QAGNN(nn.Module):
             param.requires_grad = False
 
         lm_hid_dim = self.text_enc.config.hidden_size
-        self.text_att = torch.nn.MultiheadAttention(embed_dim=lm_hid_dim, num_heads=4, dropout=dropout, batch_first=True)
+        # self.text_att = torch.nn.MultiheadAttention(embed_dim=lm_hid_dim, num_heads=4, dropout=dropout, batch_first=True)
         self.qa2cp = nn.Sequential(
-            nn.Linear(seq_len * lm_hid_dim, hid_dim),
+            nn.Linear(lm_hid_dim, cp_dim),
             nn.ReLU(),
-            nn.Linear(hid_dim, cp_dim)
         )
 
         self.gnn = GNN(cp_dim, hid_dim, n_ntype, n_etype, dropout)
 
-        self.mlp = nn.Sequential(
-            nn.Linear(cp_dim + 2 * hid_dim, 2 * hid_dim),
-            nn.ReLU(),
-            nn.Linear(2 * hid_dim, hid_dim // 2),
-            nn.ReLU(),
-            nn.Linear(hid_dim // 2, 1)
-            # nn.Sigmoid()
-        )
+        layer_dims = [(cp_dim + 2 * hid_dim), (4 * hid_dim), (2 * hid_dim), (hid_dim), (hid_dim // 2), (1)]
+        n_layers = len(layer_dims) - 1
+        self.mlp = nn.Sequential()
+        for i in range(n_layers):
+            self.mlp.add_module(f'lin{i + 1}', nn.Linear(layer_dims[i], layer_dims[i + 1]))
+            if i < n_layers - 1:
+                self.mlp.add_module(f'dropout{i + 1}', nn.Dropout(dropout))
+                self.mlp.add_module(f'relu{i + 1}', nn.ReLU())
 
     def forward(self, tbatch, gbatch):
         input_ids, input_masks, segment_ids, output_masks = tbatch
-        text_all_hid_states = self.text_enc(input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_masks)
-        hid_states = text_all_hid_states[-1][-1]  # (tb, seq_len, lm_hid_dim)
+        lm_all_hid_states = self.text_enc(input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_masks)
+        seq_embs = lm_all_hid_states[-1][-1]  # (tb, seq_len, lm_hid_dim)
+        qa_emb = self.text_enc.pooler(seq_embs).squeeze()  # (tb, lm_hid_dim)
 
-        qa_emb, _ = self.text_att(query=hid_states, key=hid_states, value=hid_states, key_padding_mask=output_masks, need_weights=False)  # (tb, seq_len, lm_hid_dim)
-        qa_emb = self.qa2cp(qa_emb.contiguous().view(qa_emb.size(0), -1))  # (tb, cp_emb)
-        # qa_emb = Batch.from_data_list(data_list=list(qa_emb), follow_batch=gbatch.batch)  # ([gb,] lm_hid_dim,)
-        # qa_emb = Batch(qa_emb, follow_batch=gbatch.batch)
-        # print(qa_emb.size(), gbatch.x.size())
-        qa_node_emb, pooled_graph_emb = self.gnn(qa_emb=qa_emb, x=gbatch.x, node_ids=gbatch.node_ids, node_types=gbatch.node_types, node_scores=gbatch.node_scores,
+        # qa_emb, _ = self.text_att(query=hid_states, key=hid_states, value=hid_states, key_padding_mask=output_masks, need_weights=False)  # (tb, seq_len, lm_hid_dim)
+        # qa_emb = self.qa2cp(qa_emb.contiguous().view(qa_emb.size(0), -1))  # (tb, cp_emb)
+
+        qa_node_emb, pooled_graph_emb = self.gnn(qa_emb=self.qa2cp(qa_emb), x=gbatch.x, node_ids=gbatch.node_ids, node_types=gbatch.node_types, node_scores=gbatch.node_scores,
                         edge_index=gbatch.edge_index, edge_type=gbatch.edge_type, edge_attr=gbatch.edge_attr, node2graph=gbatch.batch)  # (hid_dim,), (hid_dim,)
         
-        emb = torch.concat([qa_emb, qa_node_emb, pooled_graph_emb], dim=-1)
+        emb = torch.concat([qa_emb, qa_node_emb, pooled_graph_emb], dim=-1)  # (gb, 2 * hid_dim)
 
         emb = F.dropout(emb, p=self.dropout, training=self.training)
-        emb = self.mlp(emb)
+        emb = self.mlp(emb)  # (gb, 1)
 
         return emb
 
@@ -62,20 +60,22 @@ class GNN(nn.Module):
         super(GNN, self).__init__()
         self.hid_dim = hid_dim
         self.dropout = dropout
-        self.act = nn.ReLU()
         # self.gelu
 
         self.ntype_nscore_enc = nn.Linear(n_ntype + 1, hid_dim // 2)
 
-        self.x2h = nn.Linear(cp_dim + hid_dim // 2, hid_dim)
+        self.x2h = nn.Sequential(
+            nn.Linear(cp_dim + hid_dim // 2, hid_dim),
+            nn.ReLU()
+        )
         # self.h2h = nn.Linear(2 * hid_dim, hid_dim)
 
         self.etype_enc = nn.Sequential(
-            torch.nn.Linear(n_ntype + n_etype + n_ntype, hid_dim),
+            nn.Linear(n_ntype + n_etype + n_ntype, hid_dim),
             # nn.BatchNorm1d(hid_dim),
-            self.act,
+            nn.ReLU(),
             nn.Linear(hid_dim, hid_dim),
-            self.act
+            nn.ReLU(),
         )
 
         self.gat_conv = GATConv(hid_dim, hid_dim, add_self_loops=False, edge_dim=hid_dim)
@@ -95,31 +95,16 @@ class GNN(nn.Module):
             return h[h0_selector, :]
 
         assert qa_emb.size(-1) == x.size(-1)
-        x = _working_graph(qa_emb=qa_emb, x=x)
-        x_extras = self.ntype_nscore_enc(torch.cat([node_types, node_scores], dim=-1))  # n_ntype + 1 --> D/2
-        x = torch.cat([x, x_extras], dim=-1)  # 2D --> D
-        x = self.act(x)
+        x = _working_graph(qa_emb=qa_emb, x=x)  # (gb * n_nodes, cp_dim)
+        x_extras = self.ntype_nscore_enc(torch.cat([node_types, node_scores], dim=-1))  # (gb * n_nodes, hid_dim / 2)
         
-        h = self.act(self.x2h(x))
+        h = self.x2h(torch.cat([x, x_extras], dim=-1))  # (gb * n_nodes, hid_dim)
 
-        edge_attr = self.etype_enc(edge_attr)
+        edge_attr = self.etype_enc(edge_attr)   # edge_attr is already cat(edge_type, n1_type, n2_type)
 
-        h = self.gat_conv(x=h, edge_index=edge_index, edge_attr=edge_attr)
-        
-        p = global_mean_pool(h, batch=node2graph)
-        p = self.act(p)
+        h = self.gat_conv(x=h, edge_index=edge_index, edge_attr=edge_attr)  # (gb * n_nodes, hid_dim)
+        h0 = _extract_h0(h, bs=qa_emb.size(0))  # (gb, hid_dim)
 
-        h0 = _extract_h0(h, bs=qa_emb.size(0))
-        
-        return h0, p
+        pooled_h = global_mean_pool(h, batch=node2graph)  # (gb, hid_dim)
 
-
-# class CustomMessagePassing(MessagePassing):
-#     def __init__(self, hid_dim, n_ntype, n_etype):
-#         super(CustomMessagePassing, self).__init__(aggr='add')
-#         self.hid_dim = hid_dim
-#         self.n_ntype = n_ntype
-#         self.n_etype = n_etype
-#
-#     def forward(self, x, node_types, node_scores, edge_index, edge_type):
-#         return self.propagate(edge_index=edge_index, x=x)
+        return h0, pooled_h

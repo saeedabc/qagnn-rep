@@ -81,14 +81,14 @@ def train(device, model, criterion, optimizer, scheduler, batch_size, train_load
     for epoch in range(n_epochs):
         print(f'Epoch[{epoch}]: batch_size={batch_size}, n_batches={n_batches}')
         for i, (tbatch, gbatch) in tqdm(enumerate(zip(*train_loaders))):
-            optimizer.zero_grad()
-
             tbatch = [x.to(device) for x in tbatch]
             gbatch.to(device)
 
-            out = model(tbatch, gbatch).squeeze(1)
-            target = gbatch.y
+            optimizer.zero_grad()
 
+            out = model(tbatch, gbatch).squeeze(1)
+
+            target = gbatch.y
             loss = criterion(out, target)
 
             loss.backward()
@@ -111,7 +111,7 @@ def train(device, model, criterion, optimizer, scheduler, batch_size, train_load
                     train_avg_loss = running_loss / eval_every_n_steps
                     loss_list.append(train_avg_loss)
 
-                    print(f'Epoch[{epoch}], Step[{step + 1}], Avg Train Acc: {train_avg_acc:.4f}, Avg Train Loss: {train_avg_loss:.4f}')
+                    print(f'Epoch[{epoch}], Step[{step + 1}], Avg Train Loss: {train_avg_loss:.4f}, Avg Train Acc: {train_avg_acc:.4f}')
 
                     dev_avg_acc, dev_avg_loss = evaluate(device, model, criterion, dev_loaders)
                     dev_acc_list.append(dev_avg_acc)
@@ -126,29 +126,53 @@ def train(device, model, criterion, optimizer, scheduler, batch_size, train_load
 
 
 def evaluate(device, model, criterion, loaders):
+    def eval_batch(out, target):
+        pred = torch.round(torch.sigmoid(out)).detach().cpu().numpy()
+        target = target.detach().cpu().numpy()
+
+        pred_eq_lbl = (pred == target)
+        pred_neq_lbl = ~pred_eq_lbl
+        pred_is_one = (pred == 1.)
+        pred_is_zero = (pred == 0.)
+
+        tp = sum(pred_eq_lbl & pred_is_one)
+        tn = sum(pred_eq_lbl & pred_is_zero)
+        fp = sum(pred_neq_lbl & pred_is_one)
+        fn = sum(pred_neq_lbl & pred_is_zero)
+
+        return tp, tn, fp, fn
+
     model.eval()
 
     running_loss = 0
-    n_correct = 0
-    n_total = 0
+    tps, tns, fps, fns = 0, 0, 0, 0
     with torch.no_grad():
         for i, (tbatch, gbatch) in tqdm(enumerate(zip(*loaders))):
             tbatch = [x.to(device) for x in tbatch]
             gbatch.to(device)
 
             out = model(tbatch, gbatch).squeeze(1)
+
             target = gbatch.y
             loss = criterion(out, target)
 
-            pred = torch.round(torch.sigmoid(out))
-            n_correct += torch.sum(pred == target).item()
-            n_total += target.size(0)
+            tp, tn, fp, fn = eval_batch(out, target)
+            tps += tp; tns += tn; fps += fp; fns += fn
             running_loss += loss.item()
 
-    avg_acc = 100 * (n_correct / n_total)
-    avg_loss = running_loss / len(loaders[1])
-    print(f'Eval: Avg Acc={avg_acc:.4f}, Avg Loss={avg_loss:.4f}')
-    return avg_acc, avg_loss
+    n_batches = len(loaders[1])
+    n = len(loaders[1].dataset)
+    assert n == (tps + tns + fps + fns)
+
+    avg_loss = running_loss / n_batches
+
+    precision = tps / (tps + fps)
+    recall = tps / (tps + fns)
+    f1 = 2 * (precision * recall) / (precision + recall)
+    accuracy = (tps + tns) / n
+
+    print(f'Eval: Avg Loss={avg_loss:.4f}, Acc={accuracy:.4f}, Prec={precision:.4f}, Rec={recall:.4f}, F1={f1}')
+    return accuracy, loss
 
 
 def plot(acc_list, loss_list, dev_acc_list, dev_loss_list, lrs):

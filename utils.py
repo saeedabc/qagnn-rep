@@ -1,14 +1,19 @@
 import time
 
 
-def timeit(method):
-    def timed(*args, **kw):
-        ts = time.time()
-        result = method(*args, **kw)
-        te = time.time()
+def timeit(func):
+    """Decorator that reports the execution time."""
 
-        m, s = divmod(int(te - ts), 60)
-        print(f'Execution time: ({m}:{s}) min')
+    def wrap(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        end = time.time()
+        et = end - start
 
+        h, et = divmod(et, 3600)
+        m, s = divmod(et, 60)
+
+        print(f'{func.__name__} execution time: [{int(h)}:{int(m)}:{int(s)}]')
         return result
-    return timed
+
+    return wrap
