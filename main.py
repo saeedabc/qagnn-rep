@@ -103,22 +103,19 @@ def train(device, model, criterion, optimizer, scheduler, batch_size, train_load
                 n_total += gbatch.num_graphs
                 running_loss += loss.item()
 
+                train_acc = n_correct / n_total
+                acc_list.append(train_acc); n_correct, n_total = 0, 0
+
+                train_avg_loss = running_loss / eval_every_n_steps
+                loss_list.append(train_avg_loss); running_loss = 0
+
                 step = epoch * n_batches + i
+                print(f'Step[{step + 1}], Train: Avg Loss={train_avg_loss:.4f}, Acc={train_acc:.4f}')
+
                 if (step + 1) % eval_every_n_steps == 0:
-                    train_avg_acc = 100 * (n_correct / n_total)
-                    acc_list.append(train_avg_acc)
-
-                    train_avg_loss = running_loss / eval_every_n_steps
-                    loss_list.append(train_avg_loss)
-
-                    print(f'Epoch[{epoch}], Step[{step + 1}], Avg Train Loss: {train_avg_loss:.4f}, Avg Train Acc: {train_avg_acc:.4f}')
-
                     dev_avg_acc, dev_avg_loss = evaluate(device, model, criterion, dev_loaders)
                     dev_acc_list.append(dev_avg_acc)
                     dev_loss_list.append(dev_avg_loss)
-
-                    running_loss = 0
-                    n_correct, n_total = 0, 0
 
     stats = acc_list, loss_list, dev_acc_list, dev_loss_list, lrs
     plot(*stats)
