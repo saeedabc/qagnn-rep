@@ -15,7 +15,7 @@ from data_loader import QAGNN_RawDataLoader
 from model import QAGNN
 
 
-def main(mode, seed, lr, lr_end, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_etype, max_n_nodes, max_seq_len, hid_dim, dropout, weight_decay, lm_name, n_warmup_ratio,
+def main(mode, seed, lr, lr_end, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_etype, max_n_nodes, max_seq_len, hid_dim, dropout, weight_decay, lm_name, n_warmup_ratio, pos_weight,
          cp_emb_path, train_adj_path, train_stmt_path, dev_adj_path, dev_stmt_path, test_adj_path, test_stmt_path, **args):
 
     random.seed(seed)
@@ -42,7 +42,7 @@ def main(mode, seed, lr, lr_end, batch_size, n_epochs, eval_every_n_steps, n_nty
 
 
     save_path = f'saved_models/csqa/lm_{lm_name}_hiddim_{hid_dim}_batchsize_{batch_size}_seed_{seed}.pth'
-    criterion = torch.nn.BCEWithLogitsLoss()
+    criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], dtype=torch.float).to(device))
 
     if mode in ['train', 'both']:
         # optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -54,6 +54,8 @@ def main(mode, seed, lr, lr_end, batch_size, n_epochs, eval_every_n_steps, n_nty
         dev_dls = DataLoader(dev_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=dev_graph_ds, batch_size=batch_size, shuffle=True)
 
         train(device, model, criterion, optimizer, batch_size, train_loaders=train_dls, dev_loaders=dev_dls, n_epochs=n_epochs, eval_every_n_steps=eval_every_n_steps, lr_end=lr_end, n_warmup_ratio=n_warmup_ratio)
+
+        evaluate(device, model, criterion, loaders=train_dls)
 
         pathlib.Path('/'.join(save_path.split('/')[:-1])).mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), save_path)
@@ -73,12 +75,13 @@ def train(device, model, criterion, optimizer, batch_size, train_loaders, dev_lo
 
     n_batches = len(train_loaders[1]); n_steps = n_epochs * n_batches
     # lr_scheduler = get_scheduler(name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=n_steps)
-    lr_scheduler = get_polynomial_decay_schedule_with_warmup(optimizer, num_warmup_steps=int(n_warmup_ratio * n_steps), num_training_steps=n_steps, lr_end=lr_end)
+    lr_scheduler = get_scheduler('linear', optimizer=optimizer, num_warmup_steps=int(n_warmup_ratio * n_steps), num_training_steps=n_steps)
 
     acc_list, loss_list = [], []
     dev_acc_list, dev_loss_list = [], []
-
     lrs = []
+    running_loss, n_correct, n_total = 0, 0, 0
+
     for epoch in range(n_epochs):
         print(f'Epoch[{epoch}]: batch_size={batch_size}, n_batches={n_batches}')
         for i, (tbatch, gbatch) in tqdm(enumerate(zip(*train_loaders))):
@@ -98,18 +101,25 @@ def train(device, model, criterion, optimizer, batch_size, train_loaders, dev_lo
 
             with torch.no_grad():
                 pred = torch.round(torch.sigmoid(out))
-                n_correct = torch.sum(pred == target).item(); n_total = gbatch.num_graphs
-                train_acc = n_correct / n_total; acc_list.append(train_acc)
-                train_avg_loss = loss.item(); loss_list.append(loss.item())
-
+                n_correct_batch = torch.sum(pred == target).item(); n_correct += n_correct_batch
+                n_total_batch = gbatch.num_graphs; n_total += n_total_batch
+                loss_batch = loss.item(); running_loss += loss_batch
+                
                 lrs.append(optimizer.param_groups[0]["lr"])
-                step = epoch * n_batches + i
-                print(f'Step[{step + 1}], Train: Avg Loss={train_avg_loss:.4f}, Acc={train_acc:.4f}, lr={lrs[-1]}')
 
+                step = epoch * n_batches + i
+                print(f'E[{epoch}], S[{step+1}], loss={loss_batch}, acc={n_correct_batch/n_total_batch}')
+                
                 if (step + 1) % eval_every_n_steps == 0:
-                    dev_acc, dev_avg_loss = evaluate(device, model, criterion, dev_loaders)
-                    dev_acc_list.append(dev_acc)
-                    dev_loss_list.append(dev_avg_loss)
+                    train_acc = n_correct / n_total; train_avg_loss = running_loss / eval_every_n_steps
+                    acc_list.append(train_acc)
+                    loss_list.append(train_avg_loss)
+                    print(f'Step[{step + 1}], Train: Avg Loss={train_avg_loss:.4f}, Acc={train_acc:.4f}, lr={lrs[-1]}')
+                    running_loss, n_correct, n_total = 0, 0, 0
+
+                    # dev_acc, dev_avg_loss = evaluate(device, model, criterion, dev_loaders)
+                    # dev_acc_list.append(dev_acc)
+                    # dev_loss_list.append(dev_avg_loss)
 
     stats = acc_list, loss_list, dev_acc_list, dev_loss_list, lrs
     plot(*stats)
@@ -212,6 +222,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', dest='n_epochs', type=int, default=cfg.get('n_epochs'), help='number of epochs')
     parser.add_argument('--eval-every', dest='eval_every_n_steps', type=int, default=cfg.get('eval_every_n_steps'))
     parser.add_argument('--warmup-ratio', dest='n_warmup_ratio', type=float, default=0.02)
+    parser.add_argument('--pos-weight', dest='pos_weight', type=float, default=4.0)
     args = parser.parse_args()
 
     cfg.update(vars(args))

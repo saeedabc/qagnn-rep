@@ -9,10 +9,10 @@
     "hid_dim": 128,
     "lm_name": "bert-base-cased",
 
-    "lr": 1e-3,
+    "lr": 3.5e-6,
     "batch_size": 64,
     "n_epochs": 3,
-    "eval_every_n_steps": 256,
+    "eval_every_n_steps": 200,
 
     "dropout": 0.1,
     "weight_decay": 0.01,

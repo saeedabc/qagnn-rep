@@ -21,4 +21,4 @@ mv data_preprocessed_release data
 
 python main.py --lr 1e-3 --bs 128 --epochs 3 --eval-every 200
 # or
-CUDA_VISIBLE_DEVICES=0,1,2,3 python main.py
+CUDA_VISIBLE_DEVICES=0 python main.py --lr 7e-6 --bs 64 --epochs 3 --pos-weight 4 --warmup-ratio 0.1
