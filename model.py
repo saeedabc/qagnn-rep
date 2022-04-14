@@ -26,7 +26,7 @@ class QAGNN(nn.Module):
 
         self.gnn = GNN(cp_dim, hid_dim, n_ntype, n_etype, dropout)
 
-        layer_dims = [(cp_dim + 2 * hid_dim), (4 * hid_dim), (2 * hid_dim), (hid_dim), (hid_dim // 2), (1)]
+        layer_dims = [(lm_hid_dim + 2 * hid_dim), (4 * hid_dim), (2 * hid_dim), (hid_dim), (hid_dim // 2), (1)]
         n_layers = len(layer_dims) - 1
         self.mlp = nn.Sequential()
         for i in range(n_layers):
@@ -47,7 +47,7 @@ class QAGNN(nn.Module):
         qa_node_emb, pooled_graph_emb = self.gnn(qa_emb=self.qa2cp(qa_emb), x=gbatch.x, node_ids=gbatch.node_ids, node_types=gbatch.node_types, node_scores=gbatch.node_scores,
                         edge_index=gbatch.edge_index, edge_type=gbatch.edge_type, edge_attr=gbatch.edge_attr, node2graph=gbatch.batch)  # (hid_dim,), (hid_dim,)
 
-        emb = torch.concat([qa_emb, qa_node_emb, pooled_graph_emb], dim=-1)  # (gb, 2 * hid_dim)
+        emb = torch.concat([qa_emb, qa_node_emb, pooled_graph_emb], dim=-1)  # (gb, lm_hid_dim + 2 * hid_dim)
 
         emb = F.dropout(emb, p=self.dropout, training=self.training)
         emb = self.mlp(emb)  # (gb, 1)

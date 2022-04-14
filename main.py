@@ -15,7 +15,7 @@ from data_loader import QAGNN_RawDataLoader
 from model import QAGNN
 
 
-def main(mode, seed, lr, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_etype, max_n_nodes, max_seq_len, hid_dim, dropout, weight_decay, lm_name,
+def main(mode, seed, lr, lr_end, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_etype, max_n_nodes, max_seq_len, hid_dim, dropout, weight_decay, lm_name, n_warmup_ratio,
          cp_emb_path, train_adj_path, train_stmt_path, dev_adj_path, dev_stmt_path, test_adj_path, test_stmt_path, **args):
 
     random.seed(seed)
@@ -53,7 +53,7 @@ def main(mode, seed, lr, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_et
         dev_text_ds, dev_graph_ds = db.dev_dataset()
         dev_dls = DataLoader(dev_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=dev_graph_ds, batch_size=batch_size, shuffle=True)
 
-        train(device, model, criterion, optimizer, batch_size, train_loaders=train_dls, dev_loaders=dev_dls, n_epochs=n_epochs, eval_every_n_steps=eval_every_n_steps)
+        train(device, model, criterion, optimizer, batch_size, train_loaders=train_dls, dev_loaders=dev_dls, n_epochs=n_epochs, eval_every_n_steps=eval_every_n_steps, lr_end=lr_end, n_warmup_ratio=n_warmup_ratio)
 
         pathlib.Path('/'.join(save_path.split('/')[:-1])).mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), save_path)
@@ -68,12 +68,12 @@ def main(mode, seed, lr, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_et
 
 
 @timeit
-def train(device, model, criterion, optimizer, batch_size, train_loaders, dev_loaders, n_epochs, eval_every_n_steps):
+def train(device, model, criterion, optimizer, batch_size, train_loaders, dev_loaders, n_epochs, eval_every_n_steps, lr_end, n_warmup_ratio):
     model.train()
 
     n_batches = len(train_loaders[1]); n_steps = n_epochs * n_batches
     # lr_scheduler = get_scheduler(name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=n_steps)
-    lr_scheduler = get_polynomial_decay_schedule_with_warmup(optimizer, num_warmup_steps=n_steps // 10, num_training_steps=n_steps, lr_end=1e-5)
+    lr_scheduler = get_polynomial_decay_schedule_with_warmup(optimizer, num_warmup_steps=int(n_warmup_ratio * n_steps), num_training_steps=n_steps, lr_end=lr_end)
 
     acc_list, loss_list = [], []
     dev_acc_list, dev_loss_list = [], []
@@ -206,10 +206,12 @@ if __name__ == '__main__':
     cfg = json.load(fp=open('config.json', 'r'))
 
     parser = argparse.ArgumentParser('Extra input hyper-parameters')
-    parser.add_argument('--lr', dest='lr', type=float, help='learning rate')
-    parser.add_argument('--bs', dest='batch_size', type=int, help='batch size')
-    parser.add_argument('--epochs', dest='n_epochs', type=int, help='number of epochs')
-    parser.add_argument('--eval-every', dest='eval_every_n_steps', type=int)
+    parser.add_argument('--lr', dest='lr', type=float, default=cfg.get('lr'), help='peak learning rate')
+    parser.add_argument('--lr-end', dest='lr_end', type=float, default=1e-6, help='converging learning rate')
+    parser.add_argument('--bs', dest='batch_size', type=int, default=cfg.get('batch_size'), help='batch size')
+    parser.add_argument('--epochs', dest='n_epochs', type=int, default=cfg.get('n_epochs'), help='number of epochs')
+    parser.add_argument('--eval-every', dest='eval_every_n_steps', type=int, default=cfg.get('eval_every_n_steps'))
+    parser.add_argument('--warmup-ratio', dest='n_warmup_ratio', type=float, default=0.02)
     args = parser.parse_args()
 
     cfg.update(vars(args))
