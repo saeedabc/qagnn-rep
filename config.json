@@ -1,23 +1,21 @@
 {
-    "mode": ["train", "test"],
+    "mode": "both",
     "seed": 0,
-
-    "lr": 5e-5,
-    "batch_size": 64,
-    "n_epochs": 3,
-    "eval_every_n_steps": 256,
 
     "n_ntype": 4,
     "n_etype": 38,
     "max_n_nodes": 200,
     "max_seq_len": 128,
-
     "hid_dim": 128,
+    "lm_name": "bert-base-cased",
+
+    "lr": 1e-3,
+    "batch_size": 64,
+    "n_epochs": 3,
+    "eval_every_n_steps": 256,
 
     "dropout": 0.1,
     "weight_decay": 0.01,
-
-    "lm_name": "bert-base-cased",
 
     "cp_emb_path": "data/cpnet/tzw.ent.npy",
 

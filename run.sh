@@ -19,6 +19,6 @@ mv data_preprocessed_release data
 
 ### Run the code
 
-python main.py
+python main.py --lr 1e-3 --bs 128 --epochs 3 --eval-every 200
 # or
 CUDA_VISIBLE_DEVICES=0,1,2,3 python main.py

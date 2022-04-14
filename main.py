@@ -9,13 +9,14 @@ import pathlib
 import matplotlib.pyplot as plt
 from utils import timeit
 from transformers import get_scheduler, get_polynomial_decay_schedule_with_warmup
+import argparse
 
 from data_loader import QAGNN_RawDataLoader
 from model import QAGNN
 
 
 def main(mode, seed, lr, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_etype, max_n_nodes, max_seq_len, hid_dim, dropout, weight_decay, lm_name,
-         cp_emb_path, train_adj_path, train_stmt_path, dev_adj_path, dev_stmt_path, test_adj_path, test_stmt_path, **cfg):
+         cp_emb_path, train_adj_path, train_stmt_path, dev_adj_path, dev_stmt_path, test_adj_path, test_stmt_path, **args):
 
     random.seed(seed)
     np.random.seed(seed)
@@ -43,7 +44,7 @@ def main(mode, seed, lr, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_et
     save_path = f'saved_models/csqa/lm_{lm_name}_hiddim_{hid_dim}_batchsize_{batch_size}_seed_{seed}.pth'
     criterion = torch.nn.BCEWithLogitsLoss()
 
-    if 'train' in mode:
+    if mode in ['train', 'both']:
         # optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
@@ -57,9 +58,8 @@ def main(mode, seed, lr, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_et
         pathlib.Path('/'.join(save_path.split('/')[:-1])).mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), save_path)
 
-    if 'test' in mode:
-        if 'train' not in mode:
-            model.load_state_dict(torch.load(save_path))  # ; model.eval()
+    if mode in ['test', 'both']:
+        model.load_state_dict(torch.load(save_path))  # ; model.eval()
 
         test_text_ds, test_graph_ds = db.test_dataset()
         test_dls = DataLoader(test_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=test_graph_ds, batch_size=batch_size, shuffle=True)
@@ -73,7 +73,7 @@ def train(device, model, criterion, optimizer, batch_size, train_loaders, dev_lo
 
     n_batches = len(train_loaders[1]); n_steps = n_epochs * n_batches
     # lr_scheduler = get_scheduler(name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=n_steps)
-    lr_scheduler = get_polynomial_decay_schedule_with_warmup(optimizer, num_warmup_steps=n_batches // 2, num_training_steps=n_steps, lr_end=3e-6)
+    lr_scheduler = get_polynomial_decay_schedule_with_warmup(optimizer, num_warmup_steps=n_steps // 10, num_training_steps=n_steps, lr_end=1e-5)
 
     acc_list, loss_list = [], []
     dev_acc_list, dev_loss_list = [], []
@@ -102,10 +102,10 @@ def train(device, model, criterion, optimizer, batch_size, train_loaders, dev_lo
                 train_acc = n_correct / n_total; acc_list.append(train_acc)
                 train_avg_loss = loss.item(); loss_list.append(loss.item())
 
+                lrs.append(optimizer.param_groups[0]["lr"])
                 step = epoch * n_batches + i
                 print(f'Step[{step + 1}], Train: Avg Loss={train_avg_loss:.4f}, Acc={train_acc:.4f}, lr={lrs[-1]}')
 
-                lrs.append(optimizer.param_groups[0]["lr"])
                 if (step + 1) % eval_every_n_steps == 0:
                     dev_acc, dev_avg_loss = evaluate(device, model, criterion, dev_loaders)
                     dev_acc_list.append(dev_acc)
@@ -204,4 +204,14 @@ def plot(acc_list, loss_list, dev_acc_list, dev_loss_list, lrs):
 
 if __name__ == '__main__':
     cfg = json.load(fp=open('config.json', 'r'))
+
+    parser = argparse.ArgumentParser('Extra input hyper-parameters')
+    parser.add_argument('--lr', dest='lr', type=float, help='learning rate')
+    parser.add_argument('--bs', dest='batch_size', type=int, help='batch size')
+    parser.add_argument('--epochs', dest='n_epochs', type=int, help='number of epochs')
+    parser.add_argument('--eval-every', dest='eval_every_n_steps', type=int)
+    args = parser.parse_args()
+
+    cfg.update(vars(args))
     main(**cfg)
+

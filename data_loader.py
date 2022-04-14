@@ -65,8 +65,7 @@ class QAGNN_RawDataLoader:
         self.n_ntype = n_ntype
         self.n_etype = n_etype
 
-        # self.cp_emb = torch.tensor(np.load(cp_emb_path), dtype=torch.float)  # (799273, 1024)  # TODO
-        self.cp_emb = torch.zeros((799273, 1024))
+        self.cp_emb = torch.tensor(np.load(cp_emb_path), dtype=torch.float)  # (799273, 1024)  # TODO
         self.cp_dim = self.cp_emb.size(1)
         # print(f'conceptnet embeddings shape: {cp_emb.size()}')
 
