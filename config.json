@@ -2,10 +2,10 @@
     "mode": ["train", "test"],
     "seed": 0,
 
-    "lr": 3e-5,
-    "batch_size": 128,
-    "n_epochs": 1,
-    "eval_every_n_steps": 6,
+    "lr": 5e-5,
+    "batch_size": 64,
+    "n_epochs": 3,
+    "eval_every_n_steps": 256,
 
     "n_ntype": 4,
     "n_etype": 38,
@@ -17,7 +17,7 @@
     "dropout": 0.1,
     "weight_decay": 0.01,
 
-    "lm_name": "roberta-large",
+    "lm_name": "bert-base-cased",
 
     "cp_emb_path": "data/cpnet/tzw.ent.npy",
 

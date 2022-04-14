@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing, GATConv, global_mean_pool
 from torch_geometric.data.batch import Batch
 from torch_geometric.utils import add_self_loops, degree
-from transformers import AutoModel, BertModel
+from transformers import AutoModel
 
 
 class QAGNN(nn.Module):
@@ -14,19 +14,19 @@ class QAGNN(nn.Module):
         self.dropout = dropout
 
         self.text_enc = AutoModel.from_pretrained(lm_name, output_hidden_states=True)
-        for param in self.text_enc.base_model.parameters():
-            param.requires_grad = False
+        # for param in self.text_enc.base_model.parameters():
+        #     param.requires_grad = False
 
         lm_hid_dim = self.text_enc.config.hidden_size
-        # self.text_att = torch.nn.MultiheadAttention(embed_dim=lm_hid_dim, num_heads=4, dropout=dropout, batch_first=True)
         self.qa2cp = nn.Sequential(
             nn.Linear(lm_hid_dim, cp_dim),
             nn.ReLU(),
         )
 
-        self.gnn = GNN(cp_dim, hid_dim, n_ntype, n_etype, dropout)
+        # self.gnn = GNN(cp_dim, hid_dim, n_ntype, n_etype, dropout)  # TODO
 
-        layer_dims = [(cp_dim + 2 * hid_dim), (4 * hid_dim), (2 * hid_dim), (hid_dim), (hid_dim // 2), (1)]
+        # layer_dims = [(cp_dim + 2 * hid_dim), (4 * hid_dim), (2 * hid_dim), (hid_dim), (hid_dim // 2), (1)]  # TODO
+        layer_dims = [(cp_dim), (2 * hid_dim), (hid_dim), (hid_dim // 2), (1)]
         n_layers = len(layer_dims) - 1
         self.mlp = nn.Sequential()
         for i in range(n_layers):
@@ -44,11 +44,11 @@ class QAGNN(nn.Module):
         # qa_emb, _ = self.text_att(query=hid_states, key=hid_states, value=hid_states, key_padding_mask=output_masks, need_weights=False)  # (tb, seq_len, lm_hid_dim)
         # qa_emb = self.qa2cp(qa_emb.contiguous().view(qa_emb.size(0), -1))  # (tb, cp_emb)
 
-        qa_node_emb, pooled_graph_emb = self.gnn(qa_emb=self.qa2cp(qa_emb), x=gbatch.x, node_ids=gbatch.node_ids, node_types=gbatch.node_types, node_scores=gbatch.node_scores,
-                        edge_index=gbatch.edge_index, edge_type=gbatch.edge_type, edge_attr=gbatch.edge_attr, node2graph=gbatch.batch)  # (hid_dim,), (hid_dim,)
-        
-        emb = torch.concat([qa_emb, qa_node_emb, pooled_graph_emb], dim=-1)  # (gb, 2 * hid_dim)
-
+        # qa_node_emb, pooled_graph_emb = self.gnn(qa_emb=self.qa2cp(qa_emb), x=gbatch.x, node_ids=gbatch.node_ids, node_types=gbatch.node_types, node_scores=gbatch.node_scores,
+        #                 edge_index=gbatch.edge_index, edge_type=gbatch.edge_type, edge_attr=gbatch.edge_attr, node2graph=gbatch.batch)  # (hid_dim,), (hid_dim,)
+        #
+        # emb = torch.concat([qa_emb, qa_node_emb, pooled_graph_emb], dim=-1)  # (gb, 2 * hid_dim)  # TODO
+        emb = qa_emb
         emb = F.dropout(emb, p=self.dropout, training=self.training)
         emb = self.mlp(emb)  # (gb, 1)
 
