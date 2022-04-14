@@ -15,7 +15,8 @@ from data_loader import QAGNN_RawDataLoader
 from model import QAGNN
 
 
-def main(mode, seed, lr, lr_end, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_etype, max_n_nodes, max_seq_len, hid_dim, dropout, weight_decay, lm_name, n_warmup_ratio, pos_weight,
+def main(mode, seed, lr, lr_end, batch_size, n_epochs, eval_every_n_steps, n_ntype, n_etype, max_n_nodes, max_seq_len, hid_dim,
+         dropout, weight_decay, lm_name, n_warmup_ratio, pos_weight, optim, sched,
          cp_emb_path, train_adj_path, train_stmt_path, dev_adj_path, dev_stmt_path, test_adj_path, test_stmt_path, **args):
 
     random.seed(seed)
@@ -45,15 +46,17 @@ def main(mode, seed, lr, lr_end, batch_size, n_epochs, eval_every_n_steps, n_nty
     criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], dtype=torch.float).to(device))
 
     if mode in ['train', 'both']:
+        optim_func = {'adamw': torch.optim.AdamW, 'sgd': torch.optim.SGD}.get(optim)
+        optimizer = optim_func(model.parameters(), lr=lr, weight_decay=weight_decay)
         # optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)
-        optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
         train_text_ds, train_graph_ds = db.train_dataset()
         train_dls = DataLoader(train_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=train_graph_ds, batch_size=batch_size, shuffle=True)
         dev_text_ds, dev_graph_ds = db.dev_dataset()
         dev_dls = DataLoader(dev_text_ds, batch_size=batch_size, shuffle=True), GraphDataLoader(dataset=dev_graph_ds, batch_size=batch_size, shuffle=True)
 
-        train(device, model, criterion, optimizer, batch_size, train_loaders=train_dls, dev_loaders=dev_dls, n_epochs=n_epochs, eval_every_n_steps=eval_every_n_steps, lr_end=lr_end, n_warmup_ratio=n_warmup_ratio)
+        train(device, model, criterion, optimizer, batch_size, train_loaders=train_dls, dev_loaders=dev_dls,
+              n_epochs=n_epochs, eval_every_n_steps=eval_every_n_steps, lr_end=lr_end, n_warmup_ratio=n_warmup_ratio, sched=sched)
 
         evaluate(device, model, criterion, loaders=train_dls)
 
@@ -70,12 +73,13 @@ def main(mode, seed, lr, lr_end, batch_size, n_epochs, eval_every_n_steps, n_nty
 
 
 @timeit
-def train(device, model, criterion, optimizer, batch_size, train_loaders, dev_loaders, n_epochs, eval_every_n_steps, lr_end, n_warmup_ratio):
+def train(device, model, criterion, optimizer, batch_size, train_loaders, dev_loaders, n_epochs, eval_every_n_steps, lr_end, n_warmup_ratio, sched):
     model.train()
 
     n_batches = len(train_loaders[1]); n_steps = n_epochs * n_batches
+
     # lr_scheduler = get_scheduler(name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=n_steps)
-    lr_scheduler = get_scheduler('linear', optimizer=optimizer, num_warmup_steps=int(n_warmup_ratio * n_steps), num_training_steps=n_steps)
+    lr_scheduler = get_scheduler(sched, optimizer=optimizer, num_warmup_steps=int(n_warmup_ratio * n_steps), num_training_steps=n_steps)
 
     acc_list, loss_list = [], []
     dev_acc_list, dev_loss_list = [], []
@@ -108,7 +112,7 @@ def train(device, model, criterion, optimizer, batch_size, train_loaders, dev_lo
                 lrs.append(optimizer.param_groups[0]["lr"])
 
                 step = epoch * n_batches + i
-                print(f'E[{epoch}], S[{step+1}], loss={loss_batch}, acc={n_correct_batch/n_total_batch}')
+                print(f'E[{epoch}], S[{step+1}], loss={loss_batch}, acc={n_correct_batch/n_total_batch}, lr={lrs[-1]}')
                 
                 if (step + 1) % eval_every_n_steps == 0:
                     train_acc = n_correct / n_total; train_avg_loss = running_loss / eval_every_n_steps
@@ -223,6 +227,8 @@ if __name__ == '__main__':
     parser.add_argument('--eval-every', dest='eval_every_n_steps', type=int, default=cfg.get('eval_every_n_steps'))
     parser.add_argument('--warmup-ratio', dest='n_warmup_ratio', type=float, default=0.02)
     parser.add_argument('--pos-weight', dest='pos_weight', type=float, default=4.0)
+    parser.add_argument('--optim', dest='optim', type=str, default='adamw')  # sgd
+    parser.add_argument('--sched', dest='sched', type=str, default='linear')  # linear, constant, constant-with-warmup
     args = parser.parse_args()
 
     cfg.update(vars(args))
