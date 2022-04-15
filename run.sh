@@ -8,7 +8,7 @@ conda activate qagnn
 conda install pytorch cudatoolkit=10.2 -c pytorch
 conda install pyg -c pyg
 conda install -c conda-forge transformers
-
+pip install matplotlib
 
 ### Download preprocessed data first:
 
@@ -19,6 +19,6 @@ mv data_preprocessed_release data
 
 ### Run the code
 
-python main.py --lr 1e-3 --bs 128 --epochs 3 --eval-every 200
+python main.py --lr 1e-5 --bs 64 --epochs 2 --pos-weight 4 --warmup-ratio 0.1 --sched=linear
 # or
-CUDA_VISIBLE_DEVICES=0 python main.py --lr 7e-6 --bs 64 --epochs 3 --pos-weight 4 --warmup-ratio 0.1
+CUDA_VISIBLE_DEVICES=0 python main.py --lr 1e-5 --bs 64 --epochs 3 --pos-weight 4 --warmup-ratio 0.1 --sched=linear

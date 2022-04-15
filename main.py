@@ -121,9 +121,9 @@ def train(device, model, criterion, optimizer, batch_size, train_loaders, dev_lo
                     print(f'Step[{step + 1}], Train: Avg Loss={train_avg_loss:.4f}, Acc={train_acc:.4f}, lr={lrs[-1]}')
                     running_loss, n_correct, n_total = 0, 0, 0
 
-                    # dev_acc, dev_avg_loss = evaluate(device, model, criterion, dev_loaders)
-                    # dev_acc_list.append(dev_acc)
-                    # dev_loss_list.append(dev_avg_loss)
+                    dev_acc, dev_avg_loss = evaluate(device, model, criterion, dev_loaders)
+                    dev_acc_list.append(dev_acc)
+                    dev_loss_list.append(dev_avg_loss)
 
     stats = acc_list, loss_list, dev_acc_list, dev_loss_list, lrs
     plot(*stats)
